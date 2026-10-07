@@ -24,8 +24,9 @@ class Settings(BaseSettings):
     # Database
     DATABASE_URL: str = "sqlite+aiosqlite:///./hydracontrol.db"
     SYNC_DATABASE_URL: str = "sqlite:///./hydracontrol.db"
+    TEST_DATABASE_URL: str = "sqlite+aiosqlite:///./test_hydracontrol.db"
 
-    @field_validator("DATABASE_URL", "SYNC_DATABASE_URL", mode="after")
+    @field_validator("DATABASE_URL", "SYNC_DATABASE_URL", "TEST_DATABASE_URL", mode="after")
     @classmethod
     def anchor_sqlite_database_path(cls, v: str) -> str:
         """Ensure relative SQLite paths always resolve to the master workspace database."""
