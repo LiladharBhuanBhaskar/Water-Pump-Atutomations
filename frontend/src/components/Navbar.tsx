@@ -1,14 +1,21 @@
 import React from 'react';
-import { Droplets, LogOut, Radio, UserCheck } from 'lucide-react';
+import { Droplets, LogOut, Radio, UserCheck, Home, Layers } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { Badge } from './common/Badge';
 
 interface NavbarProps {
   wsConnected: boolean;
   activeOrgName?: string;
+  activeMode?: 'ENTERPRISE' | 'HOME';
+  onModeToggle?: () => void;
 }
 
-export const Navbar: React.FC<NavbarProps> = ({ wsConnected, activeOrgName }) => {
+export const Navbar: React.FC<NavbarProps> = ({
+  wsConnected,
+  activeOrgName,
+  activeMode = 'ENTERPRISE',
+  onModeToggle,
+}) => {
   const { user, logout } = useAuth();
 
   const getRoleBadgeVariant = (role?: string) => {
@@ -23,10 +30,18 @@ export const Navbar: React.FC<NavbarProps> = ({ wsConnected, activeOrgName }) =>
         return 'success';
       case 'TECHNICIAN':
         return 'warning';
+      case 'FAMILY_MEMBER':
+        return 'info';
       default:
         return 'neutral';
     }
   };
+
+  const canSwitchMode =
+    user?.role === 'SUPER_ADMIN' ||
+    user?.role === 'ORGANIZATION_ADMIN' ||
+    user?.role === 'SITE_MANAGER' ||
+    user?.role === 'OWNER';
 
   return (
     <header className="border-b border-slate-800/80 bg-slate-900/60 backdrop-blur-xl sticky top-0 z-50">
@@ -52,6 +67,36 @@ export const Navbar: React.FC<NavbarProps> = ({ wsConnected, activeOrgName }) =>
             )}
           </div>
         </div>
+
+        {/* Center: Mode Switcher for multi-mode authorized users */}
+        {canSwitchMode && onModeToggle && (
+          <div className="hidden md:flex items-center p-1 rounded-2xl bg-slate-950/80 border border-slate-800 shadow-inner">
+            <button
+              type="button"
+              onClick={activeMode === 'HOME' ? onModeToggle : undefined}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold transition-all ${
+                activeMode === 'ENTERPRISE'
+                  ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Layers className="w-3.5 h-3.5" />
+              Enterprise
+            </button>
+            <button
+              type="button"
+              onClick={activeMode === 'ENTERPRISE' ? onModeToggle : undefined}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold transition-all ${
+                activeMode === 'HOME'
+                  ? 'bg-gradient-to-r from-cyan-500/20 to-blue-500/20 text-cyan-300 border border-cyan-500/30 shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Home className="w-3.5 h-3.5" />
+              Home Mode
+            </button>
+          </div>
+        )}
 
         {/* Status & User */}
         <div className="flex items-center gap-4">

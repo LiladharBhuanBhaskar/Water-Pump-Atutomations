@@ -8,6 +8,8 @@ import {
   RefreshCw,
   Radio,
   Sliders,
+  Calendar,
+  History,
 } from 'lucide-react';
 import {
   Site,
@@ -33,7 +35,12 @@ import { FlowDiagnosticsCard } from '../components/FlowDiagnosticsCard';
 import { ElectricalMetricsCard } from '../components/ElectricalMetricsCard';
 import { SafetyAlertBanner, SafetyAlert } from '../components/SafetyAlertBanner';
 import { StationSettingsModal } from '../components/StationSettingsModal';
+import { ScheduleManagerModal } from '../components/ScheduleManagerModal';
+import { EventHistoryModal } from '../components/EventHistoryModal';
 import { Spinner } from '../components/common/Spinner';
+import { TelemetryFreshnessBadge } from '../components/common/TelemetryFreshnessBadge';
+import { ControllerOfflineOverlay } from '../components/common/ControllerOfflineOverlay';
+import { ErrorBoundary } from '../components/common/ErrorBoundary';
 
 interface DashboardProps {
   latestWsEvent?: WsServerEvent | null;
@@ -60,6 +67,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ latestWsEvent }) => {
   const [flowDiagnostics, setFlowDiagnostics] = useState<Record<string, FlowDiagnosticsResponse>>({});
   const [electricalMetrics, setElectricalMetrics] = useState<Record<string, ElectricalMetricsResponse>>({});
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState<boolean>(false);
+
+  // Phase 17 & Phase 20 State
+  const [isScheduleModalOpen, setIsScheduleModalOpen] = useState<boolean>(false);
+  const [isEventHistoryModalOpen, setIsEventHistoryModalOpen] = useState<boolean>(false);
+  const [selectedHistoryMotor, setSelectedHistoryMotor] = useState<Motor | null>(null);
 
   // Live Telemetry state for primary summary gauge
   const [telemetry, setTelemetry] = useState<{
@@ -436,6 +448,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ latestWsEvent }) => {
 
   const activeSite = sites.find((s) => s.id === selectedSiteId);
   const activeStation = stations.find((s) => s.id === selectedStationId);
+  const activeController = controllers.find((c) => c.id === selectedControllerId);
 
   // Derive overhead & sump tank values from sensor readings or telemetry
   const overheadLevel =
@@ -511,16 +524,39 @@ export const Dashboard: React.FC<DashboardProps> = ({ latestWsEvent }) => {
           )}
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {activeStation && (
-            <button
-              onClick={() => setIsSettingsModalOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-cyan-400 text-xs font-bold border border-slate-700 transition-colors"
-              title="Station Settings & Automation Rules"
-            >
-              <Sliders className="w-3.5 h-3.5" />
-              <span>Rules & Settings</span>
-            </button>
+            <>
+              <button
+                onClick={() => setIsScheduleModalOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-cyan-400 text-xs font-bold border border-slate-700 transition-colors"
+                title="Automated Schedules & Timers"
+              >
+                <Calendar className="w-3.5 h-3.5" />
+                <span>Schedules</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setSelectedHistoryMotor(null);
+                  setIsEventHistoryModalOpen(true);
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-cyan-400 text-xs font-bold border border-slate-700 transition-colors"
+                title="Station-Wide Event History"
+              >
+                <History className="w-3.5 h-3.5" />
+                <span>Events</span>
+              </button>
+
+              <button
+                onClick={() => setIsSettingsModalOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-cyan-400 text-xs font-bold border border-slate-700 transition-colors"
+                title="Station Settings & Automation Rules"
+              >
+                <Sliders className="w-3.5 h-3.5" />
+                <span>Rules & Settings</span>
+              </button>
+            </>
           )}
 
           <button
@@ -570,110 +606,129 @@ export const Dashboard: React.FC<DashboardProps> = ({ latestWsEvent }) => {
         </div>
       )}
 
-      {/* WAVE 3A: Station Safety Tier (Tank Safety & Water Quality) */}
-      <div className="space-y-4">
-        <h3 className="text-base font-bold text-white uppercase tracking-wider text-xs text-slate-400">
-          Station Safety & Environmental Diagnostics
-        </h3>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* 1. Tank Safety Card */}
-          <TankSafetyCard
-            overheadLevel={overheadLevel}
-            sumpLevel={sumpLevel}
-            overheadThreshold={stationSettings?.water_level_threshold ?? 95}
-            sumpThreshold={15}
-            isTankFull={isTankFull}
-            isSourceDepleted={isSourceDepleted}
-            motorStatus={motors[0]?.status}
-            lastUpdated={telemetry.lastUpdated}
-          />
+      {/* Controller Offline Warning if applicable */}
+      {activeController && activeController.status !== 'ACTIVE' && (
+        <ControllerOfflineOverlay controller={activeController} />
+      )}
 
-          {/* 2. Water Quality Card */}
-          <WaterQualityCard
-            data={waterQuality}
-            onRefresh={() => selectedStationId && loadStationDiagnostics(selectedStationId)}
-          />
+      {/* WAVE 3A: Station Safety Tier (Tank Safety & Water Quality) */}
+      <ErrorBoundary fallbackTitle="Station Safety Tier Error">
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-base font-bold text-white uppercase tracking-wider text-xs text-slate-400">
+              Station Safety & Environmental Diagnostics
+            </h3>
+            <TelemetryFreshnessBadge occurredAt={telemetry.lastUpdated} />
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* 1. Tank Safety Card */}
+            <TankSafetyCard
+              overheadLevel={overheadLevel}
+              sumpLevel={sumpLevel}
+              overheadThreshold={stationSettings?.water_level_threshold ?? 95}
+              sumpThreshold={15}
+              isTankFull={isTankFull}
+              isSourceDepleted={isSourceDepleted}
+              motorStatus={motors[0]?.status}
+              lastUpdated={telemetry.lastUpdated}
+            />
+
+            {/* 2. Water Quality Card */}
+            <WaterQualityCard
+              data={waterQuality}
+              onRefresh={() => selectedStationId && loadStationDiagnostics(selectedStationId)}
+            />
+          </div>
         </div>
-      </div>
+      </ErrorBoundary>
 
       {/* Primary Summary Gauges */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h3 className="text-base font-bold text-white uppercase tracking-wider text-xs text-slate-400">
-            Primary Station Telemetry
-          </h3>
-          <span className="text-[11px] text-slate-500">
-            {telemetry.lastUpdated
-              ? `Live stream active: ${new Date(telemetry.lastUpdated).toLocaleTimeString()}`
-              : 'Streaming via WebSocket'}
-          </span>
+      <ErrorBoundary fallbackTitle="Telemetry Gauges Error">
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-base font-bold text-white uppercase tracking-wider text-xs text-slate-400">
+              Primary Station Telemetry
+            </h3>
+            <TelemetryFreshnessBadge occurredAt={telemetry.lastUpdated} />
+          </div>
+          <TelemetryGauge telemetry={telemetry} />
         </div>
-        <TelemetryGauge telemetry={telemetry} />
-      </div>
+      </ErrorBoundary>
 
       {/* Motors & Pumps Section with Flow Diagnostics & Electrical Metrics */}
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <h3 className="text-base font-bold text-white uppercase tracking-wider text-xs text-slate-400">
-            Pump & Motor Operational Controls & Diagnostics
-          </h3>
-        </div>
-
-        {loading ? (
-          <div className="py-12 flex justify-center">
-            <Spinner size="lg" label="Loading station pumps..." />
+      <ErrorBoundary fallbackTitle="Pump Controls & Diagnostics Error">
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <h3 className="text-base font-bold text-white uppercase tracking-wider text-xs text-slate-400">
+              Pump & Motor Operational Controls & Diagnostics
+            </h3>
           </div>
-        ) : motors.length === 0 ? (
-          <div className="glass-panel p-8 rounded-3xl text-center text-slate-400 text-sm">
-            No motors currently mapped to this controller.
-          </div>
-        ) : (
-          <div className="space-y-8">
-            {motors.map((motor) => (
-              <div key={motor.id} className="space-y-4 p-6 rounded-3xl bg-slate-950/40 border border-slate-800/80">
-                {/* Motor Controls */}
-                <MotorCard
-                  motor={motor}
-                  activeCommand={activeCommands[motor.id]}
-                  onStart={handleStartMotor}
-                  onStop={handleStopMotor}
-                  onEmergencyStop={handleEmergencyStopMotor}
-                  onReset={handleResetMotor}
-                />
 
-                {/* Motor Diagnostics Tier: Flow Protection & Electrical Metrics */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pt-2">
-                  <FlowDiagnosticsCard
-                    motorName={motor.name}
-                    data={flowDiagnostics[motor.id]}
-                    onRefresh={async () => {
-                      try {
-                        const diag = await api.getFlowDiagnostics(motor.id);
-                        setFlowDiagnostics((prev) => ({ ...prev, [motor.id]: diag }));
-                      } catch (e) {
-                        console.error(e);
-                      }
+          {loading ? (
+            <div className="py-12 flex justify-center">
+              <Spinner size="lg" label="Loading station pumps..." />
+            </div>
+          ) : motors.length === 0 ? (
+            <div className="glass-panel p-8 rounded-3xl text-center text-slate-400 text-sm">
+              No motors currently mapped to this controller.
+            </div>
+          ) : (
+            <div className="space-y-8">
+              {motors.map((motor) => (
+                <div key={motor.id} className="space-y-4 p-6 rounded-3xl bg-slate-950/40 border border-slate-800/80">
+                  {/* Motor Controls */}
+                  <MotorCard
+                    motor={motor}
+                    activeCommand={activeCommands[motor.id]}
+                    onStart={handleStartMotor}
+                    onStop={handleStopMotor}
+                    onEmergencyStop={handleEmergencyStopMotor}
+                    onReset={handleResetMotor}
+                    disabledReason={
+                      activeController && activeController.status !== 'ACTIVE'
+                        ? `Controller is ${activeController.status}`
+                        : null
+                    }
+                    onViewEvents={(m) => {
+                      setSelectedHistoryMotor(m);
+                      setIsEventHistoryModalOpen(true);
                     }}
                   />
 
-                  <ElectricalMetricsCard
-                    motorName={motor.name}
-                    data={electricalMetrics[motor.id]}
-                    onRefresh={async () => {
-                      try {
-                        const metrics = await api.getElectricalMetrics(motor.id);
-                        setElectricalMetrics((prev) => ({ ...prev, [motor.id]: metrics }));
-                      } catch (e) {
-                        console.error(e);
-                      }
-                    }}
-                  />
+                  {/* Motor Diagnostics Tier: Flow Protection & Electrical Metrics */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pt-2">
+                    <FlowDiagnosticsCard
+                      motorName={motor.name}
+                      data={flowDiagnostics[motor.id]}
+                      onRefresh={async () => {
+                        try {
+                          const diag = await api.getFlowDiagnostics(motor.id);
+                          setFlowDiagnostics((prev) => ({ ...prev, [motor.id]: diag }));
+                        } catch (e) {
+                          console.error(e);
+                        }
+                      }}
+                    />
+
+                    <ElectricalMetricsCard
+                      motorName={motor.name}
+                      data={electricalMetrics[motor.id]}
+                      onRefresh={async () => {
+                        try {
+                          const metrics = await api.getElectricalMetrics(motor.id);
+                          setElectricalMetrics((prev) => ({ ...prev, [motor.id]: metrics }));
+                        } catch (e) {
+                          console.error(e);
+                        }
+                      }}
+                    />
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </ErrorBoundary>
 
       {/* Registered Dynamic Sensors Grid */}
       {sensors.length > 0 && (
@@ -711,6 +766,29 @@ export const Dashboard: React.FC<DashboardProps> = ({ latestWsEvent }) => {
           sensors={sensors}
           isOpen={isSettingsModalOpen}
           onClose={() => setIsSettingsModalOpen(false)}
+        />
+      )}
+
+      {/* Schedule Definitions & Timers Modal (Phase 17) */}
+      {activeStation && (
+        <ScheduleManagerModal
+          station={activeStation}
+          motors={motors}
+          isOpen={isScheduleModalOpen}
+          onClose={() => setIsScheduleModalOpen(false)}
+        />
+      )}
+
+      {/* Motor & Station Historical Events Modal (Phase 20) */}
+      {activeStation && (
+        <EventHistoryModal
+          station={activeStation}
+          motor={selectedHistoryMotor}
+          isOpen={isEventHistoryModalOpen}
+          onClose={() => {
+            setIsEventHistoryModalOpen(false);
+            setSelectedHistoryMotor(null);
+          }}
         />
       )}
     </div>

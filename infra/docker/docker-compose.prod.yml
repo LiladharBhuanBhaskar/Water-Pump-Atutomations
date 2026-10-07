@@ -1,0 +1,61 @@
+version: '3.8'
+
+services:
+  # MQTT Message Broker
+  mosquitto:
+    image: eclipse-mosquitto:2.0
+    container_name: hydra_mosquitto
+    restart: always
+    ports:
+      - "1883:1883"
+      - "8883:8883"
+    volumes:
+      - ../mqtt/mosquitto.conf:/mosquitto/config/mosquitto.conf
+      - mosquitto_data:/mosquitto/data
+      - mosquitto_log:/mosquitto/log
+    networks:
+      - hydranet
+
+  # HydraControl FastAPI Backend
+  backend:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.backend
+    container_name: hydra_backend
+    restart: always
+    environment:
+      - ENVIRONMENT=production
+      - SECRET_KEY=${SECRET_KEY:-hydra_prod_ultra_secure_key_change_me_in_env_file_99182}
+      - DATABASE_URL=sqlite+aiosqlite:////app/data/hydracontrol.db
+      - MQTT_BROKER_HOST=mosquitto
+      - MQTT_BROKER_PORT=1883
+      - LOG_LEVEL=INFO
+    volumes:
+      - db_data:/app/data
+    depends_on:
+      - mosquitto
+    networks:
+      - hydranet
+
+  # Frontend & Reverse Proxy
+  frontend:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.frontend
+    container_name: hydra_frontend
+    restart: always
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - hydranet
+
+volumes:
+  mosquitto_data:
+  mosquitto_log:
+  db_data:
+
+networks:
+  hydranet:
+    driver: bridge

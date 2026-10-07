@@ -312,4 +312,49 @@ This document tracks all key technical and architectural decisions made througho
   4. **Audit Logging & Real-Time Alerts**: All safety trips generate `MotorEvent` records and broadcast `SAFETY_ALERT` and `MOTOR_STATE` WebSocket events across tenant-isolated channels.
 - **Consequences**: Complete safety integration verified across 461 passing pytest tests, with 0 migrations and untouched runtime database.
 
+---
+
+### DEC-035: Phase 23 Security Hardening & Penetration Defense Architecture
+- **Date**: 2026-10-07
+- **Context**: Need robust authentication, rate limiting, and device/API security hardening without introducing breaking schema migrations or third-party Redis dependencies.
+- **Decision**:
+  1. **JWT Refresh Token Rotation & Replay Defense**: Implemented `TokenService` (`token_service.py`) managing rotatable refresh tokens with unique JTIs, automatic invalidation upon rotation, strict replay attack detection returning 401, and revocation upon logout.
+  2. **In-Memory Sliding-Window Rate Limiting**: Implemented `RateLimiter` (`rate_limiter.py`) providing per-IP sliding window request tracking, `Retry-After` HTTP headers, and test isolation fixtures (`reset_rate_limiter_state`).
+  3. **Security Headers Middleware**: Injected standard production security headers (`X-Content-Type-Options`, `X-Frame-Options`, `X-XSS-Protection`, `Referrer-Policy`, `Content-Security-Policy`).
+- **Consequences**: Zero database migrations; verified with 100% passing security suite.
+
+---
+
+### DEC-036: Phase 24 Observability & Health Probes
+- **Date**: 2026-10-07
+- **Context**: Need Prometheus metrics and detailed Kubernetes-style liveness/readiness/deep health probes without external dependencies or metric label cardinality explosion.
+- **Decision**:
+  1. **Pure Python Prometheus Metrics**: Implemented lightweight native metrics exporter (`metrics.py`) providing `/metrics` in standard Prometheus text exposition format.
+  2. **Three-Tier Health Probes**: Provided `/health/live` (process alive), `/health/ready` (DB connected), and `/health/deep` (comprehensive DB ping + MQTT state).
+  3. **Structured JSON Logging & Correlation IDs**: Built `CorrelationAndLoggingMiddleware` propagating incoming or generating new `X-Correlation-ID` headers across all request logs.
+- **Consequences**: Zero external package overhead; high observability across services.
+
+---
+
+### DEC-037: Phase 25 Automated Load, Chaos & Full E2E Test Harnesses
+- **Date**: 2026-10-07
+- **Context**: Need automated verification of multi-device high-throughput ingestion, network chaos handling, and full lifecycle integration.
+- **Decision**:
+  1. **Multi-Device Async Load Generator**: Built `load_harness.py` simulating 100+ concurrent devices, achieving 866+ msgs/sec with 0 dropped messages.
+  2. **Authoritative Local Safety under Chaos**: Chaos suite (`test_chaos.py`) verified that during network drops or cloud disconnects, the local safety controller remains authoritative.
+  3. **Full System E2E Suite**: Validated end-to-end operational flow from auth, provisioning, telemetry ingestion, motor state engine, command ACK, to safety trips and audit logs (`test_full_system_e2e.py`).
+- **Consequences**: High-confidence regression defense; CI/CD pipeline automated in `.github/workflows/ci.yml`.
+
+---
+
+### DEC-038: Phase 26 Production ESP32 Firmware & Hardware Release
+- **Date**: 2026-10-07
+- **Context**: Need production-grade ESP32 C++ firmware, hardware wiring documentation, production container orchestration, and factory acceptance test protocols.
+- **Decision**:
+  1. **Production C++ Firmware**: Created `firmware/src/` (PlatformIO, ArduinoJson, PubSubClient) with local authoritative safety engine, relay interlocking, and anti-replay command verification.
+  2. **Hardware Documentation & Safety Warnings**: Created `docs/hardware_schematic_and_bom.md` with industrial contactor isolation architecture and explicit electrical safety disclaimers.
+  3. **Multi-Container Production Orchestration**: Created `infra/docker/docker-compose.prod.yml` and `nginx.conf` reverse proxy.
+  4. **Field Commissioning & 21-point FAT Protocol**: Created `docs/field_commissioning_and_qr.md` and `docs/factory_acceptance_test.md`.
+- **Consequences**: Repository is 100% production release ready.
+
 

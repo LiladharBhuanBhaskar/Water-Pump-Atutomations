@@ -447,3 +447,97 @@ export interface ElectricalMetricsResponse {
   details?: Record<string, any>;
 }
 
+// Phase 17: Schedule Definitions & Execution
+export interface ScheduleResponse {
+  id: string;
+  station_id: string;
+  motor_id?: string | null;
+  name: string;
+  days_of_week: string[];
+  start_time: string;
+  duration_seconds: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ScheduleCreateRequest {
+  station_id: string;
+  motor_id: string;
+  name: string;
+  days_of_week: string[];
+  start_time: string;
+  duration_seconds: number;
+  is_active?: boolean;
+}
+
+export interface ScheduleUpdateRequest {
+  name?: string;
+  days_of_week?: string[];
+  start_time?: string;
+  duration_seconds?: number;
+  is_active?: boolean;
+}
+
+// Phase 18 & 20: Motor & Station Event History
+export type MotorEventType =
+  | 'STARTED'
+  | 'STOPPED'
+  | 'FAULT'
+  | 'RESET'
+  | 'EMERGENCY_STOP'
+  | 'OFFLINE'
+  | 'ONLINE'
+  | 'COMMUNICATION_LOST';
+
+export type MotorEventSource = 'USER' | 'AUTOMATION' | 'CONTROLLER' | 'SYSTEM';
+
+export interface MotorEventResponse {
+  id: string;
+  motor_id: string;
+  event_type: MotorEventType;
+  source: MotorEventSource;
+  description?: string | null;
+  event_payload?: Record<string, any> | null;
+  occurred_at: string;
+  created_at: string;
+}
+
+// Phase 19: Audit Logging
+export type AuditAction =
+  | 'CREATE'
+  | 'UPDATE'
+  | 'DELETE'
+  | 'LOGIN'
+  | 'LOGOUT'
+  | 'START'
+  | 'STOP'
+  | 'RESET'
+  | 'EMERGENCY_STOP'
+  | 'CONFIGURE'
+  | 'ENABLE'
+  | 'DISABLE'
+  | 'ACKNOWLEDGE'
+  | 'EXPORT'
+  | 'IMPORT'
+  | 'OTHER';
+
+export type AuditActorType = 'USER' | 'SYSTEM' | 'CONTROLLER' | 'AUTOMATION';
+
+export interface AuditLogResponse {
+  id: string;
+  organization_id?: string | null;
+  site_id?: string | null;
+  station_id?: string | null;
+  actor_user_id?: string | null;
+  actor_type: AuditActorType;
+  action: AuditAction;
+  resource_type: string;
+  resource_id?: string | null;
+  action_description: string;
+  audit_metadata?: Record<string, any> | null;
+  ip_address?: string | null;
+  user_agent?: string | null;
+  occurred_at: string;
+  created_at: string;
+}

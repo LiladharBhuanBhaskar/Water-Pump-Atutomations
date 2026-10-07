@@ -21,6 +21,11 @@ import {
   WaterQualityResponse,
   FlowDiagnosticsResponse,
   ElectricalMetricsResponse,
+  ScheduleResponse,
+  ScheduleCreateRequest,
+  ScheduleUpdateRequest,
+  MotorEventResponse,
+  AuditLogResponse,
 } from '../types';
 
 const API_BASE = '/api/v1';
@@ -238,6 +243,110 @@ class ApiService {
 
   async getSensorLatest(sensorId: string): Promise<any> {
     return this.request<any>(`/sensors/${sensorId}/latest`);
+  }
+
+  // Phase 17: Schedule Endpoints
+  async getSchedules(stationId: string): Promise<ScheduleResponse[]> {
+    return this.request<ScheduleResponse[]>(`/stations/${stationId}/schedules`);
+  }
+
+  async createSchedule(stationId: string, data: ScheduleCreateRequest): Promise<ScheduleResponse> {
+    return this.request<ScheduleResponse>(`/stations/${stationId}/schedules`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateSchedule(
+    stationId: string,
+    scheduleId: string,
+    data: ScheduleUpdateRequest
+  ): Promise<ScheduleResponse> {
+    return this.request<ScheduleResponse>(`/stations/${stationId}/schedules/${scheduleId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteSchedule(stationId: string, scheduleId: string): Promise<void> {
+    return this.request<void>(`/stations/${stationId}/schedules/${scheduleId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // Phase 18 & 20: Event History Endpoints
+  async getMotorEvents(
+    motorId: string,
+    params?: {
+      start_time?: string;
+      end_time?: string;
+      event_type?: string;
+      source?: string;
+      limit?: number;
+      offset?: number;
+    }
+  ): Promise<MotorEventResponse[]> {
+    const query = new URLSearchParams();
+    if (params?.start_time) query.append('start_time', params.start_time);
+    if (params?.end_time) query.append('end_time', params.end_time);
+    if (params?.event_type && params.event_type !== 'ALL') query.append('event_type', params.event_type);
+    if (params?.source) query.append('source', params.source);
+    if (params?.limit) query.append('limit', params.limit.toString());
+    if (params?.offset) query.append('offset', params.offset.toString());
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    return this.request<MotorEventResponse[]>(`/motors/${motorId}/events${qs}`);
+  }
+
+  async getStationEvents(
+    stationId: string,
+    params?: {
+      start_time?: string;
+      end_time?: string;
+      event_type?: string;
+      source?: string;
+      motor_id?: string;
+      limit?: number;
+      offset?: number;
+    }
+  ): Promise<MotorEventResponse[]> {
+    const query = new URLSearchParams();
+    if (params?.start_time) query.append('start_time', params.start_time);
+    if (params?.end_time) query.append('end_time', params.end_time);
+    if (params?.event_type && params.event_type !== 'ALL') query.append('event_type', params.event_type);
+    if (params?.source) query.append('source', params.source);
+    if (params?.motor_id) query.append('motor_id', params.motor_id);
+    if (params?.limit) query.append('limit', params.limit.toString());
+    if (params?.offset) query.append('offset', params.offset.toString());
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    return this.request<MotorEventResponse[]>(`/stations/${stationId}/events${qs}`);
+  }
+
+  // Phase 19: Audit Log Endpoints
+  async getAuditLogs(
+    params?: {
+      start_time?: string;
+      end_time?: string;
+      action?: string;
+      actor_user_id?: string;
+      resource_type?: string;
+      resource_id?: string;
+      organization_id?: string;
+      limit?: number;
+      offset?: number;
+    }
+  ): Promise<AuditLogResponse[]> {
+    const query = new URLSearchParams();
+    if (params?.start_time) query.append('start_time', params.start_time);
+    if (params?.end_time) query.append('end_time', params.end_time);
+    if (params?.action) query.append('action', params.action);
+    if (params?.actor_user_id) query.append('actor_user_id', params.actor_user_id);
+    if (params?.resource_type) query.append('resource_type', params.resource_type);
+    if (params?.resource_id) query.append('resource_id', params.resource_id);
+    if (params?.organization_id) query.append('organization_id', params.organization_id);
+    if (params?.limit) query.append('limit', params.limit.toString());
+    if (params?.offset) query.append('offset', params.offset.toString());
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    return this.request<AuditLogResponse[]>(`/audit-logs${qs}`);
   }
 }
 

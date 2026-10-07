@@ -61,4 +61,10 @@ async def authenticate_user(session: AsyncSession, req: LoginRequest) -> TokenRe
         raise InactiveUserException("User is inactive")
         
     access_token = create_access_token(subject=str(user.id))
-    return TokenResponse(access_token=access_token, token_type="bearer")
+    from app.services.token_service import token_service
+    refresh_token = token_service.create_refresh_token(
+        user_id=user.id,
+        organization_id=user.organization_id,
+        role=user.role.value if hasattr(user.role, "value") else str(user.role),
+    )
+    return TokenResponse(access_token=access_token, refresh_token=refresh_token, token_type="bearer")

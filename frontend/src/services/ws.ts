@@ -9,6 +9,8 @@ import { WsServerEvent } from '../types';
 
 type EventListener = (event: WsServerEvent) => void;
 type ConnectionStateListener = (connected: boolean) => void;
+export type WsConnectionStatus = 'CONNECTED' | 'RECONNECTING' | 'DISCONNECTED';
+type StatusListener = (status: WsConnectionStatus, attempts: number) => void;
 
 class WebSocketService {
   private socket: WebSocket | null = null;
@@ -16,6 +18,7 @@ class WebSocketService {
   private channels: Set<string> = new Set();
   private eventListeners: Set<EventListener> = new Set();
   private stateListeners: Set<ConnectionStateListener> = new Set();
+  private statusListeners: Set<StatusListener> = new Set();
   private reconnectAttempts = 0;
   private maxReconnectDelay = 15000;
   private reconnectTimeoutId: any = null;
@@ -172,6 +175,19 @@ class WebSocketService {
     };
   }
 
+  public onStatusChange(callback: StatusListener): () => void {
+    this.statusListeners.add(callback);
+    const initialStatus: WsConnectionStatus = this.isConnected()
+      ? 'CONNECTED'
+      : this.reconnectTimeoutId
+      ? 'RECONNECTING'
+      : 'DISCONNECTED';
+    callback(initialStatus, this.reconnectAttempts);
+    return () => {
+      this.statusListeners.delete(callback);
+    };
+  }
+
   private notifyEventListeners(event: WsServerEvent) {
     this.eventListeners.forEach((listener) => {
       try {
@@ -188,6 +204,20 @@ class WebSocketService {
         listener(connected);
       } catch (err) {
         console.error('Error in WS state listener:', err);
+      }
+    });
+
+    const status: WsConnectionStatus = connected
+      ? 'CONNECTED'
+      : this.isExplicitlyClosed
+      ? 'DISCONNECTED'
+      : 'RECONNECTING';
+
+    this.statusListeners.forEach((listener) => {
+      try {
+        listener(status, this.reconnectAttempts);
+      } catch (err) {
+        console.error('Error in WS status listener:', err);
       }
     });
   }

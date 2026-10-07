@@ -123,6 +123,14 @@ async def dispatch_motor_command(
     else:
         cmd_type = command_type
 
+    # Validate Controller Operational State
+    from app.models.controller import ControllerStatus
+    if controller.status in (ControllerStatus.OFFLINE, ControllerStatus.DECOMMISSIONED, ControllerStatus.INACTIVE):
+        if cmd_type != CommandType.EMERGENCY_STOP:
+            raise MotorNotOperationalException(
+                f"Cannot dispatch command: Controller '{controller.controller_code}' is in status '{controller.status.value}'."
+            )
+
     # 6. Enforce Motor State Constraints & Pre-Start Safety Checks
     if cmd_type == CommandType.START:
         if motor.status in (MotorStatus.DISABLED, MotorStatus.MAINTENANCE, MotorStatus.OFFLINE, MotorStatus.FAULT):

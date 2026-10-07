@@ -25,6 +25,11 @@ try:
     from app.api.v1.devices import router as devices_router
     from app.api.v1.motor_control import router as motor_control_router
     from app.api.v1.automation_rules import router as automation_rules_router
+    from app.api.v1.schedules import router as schedules_router
+    from app.api.v1.events import router as events_router
+    from app.api.v1.audit_logs import router as audit_logs_router
+    from app.api.v1.notifications import router as notifications_router
+    from app.api.v1.fleet import router as fleet_router
     from app.api.v1.websocket import router as ws_router
 except ImportError:
     from backend.app.core.config import settings
@@ -39,7 +44,13 @@ except ImportError:
     from backend.app.api.v1.devices import router as devices_router
     from backend.app.api.v1.motor_control import router as motor_control_router
     from backend.app.api.v1.automation_rules import router as automation_rules_router
+    from backend.app.api.v1.schedules import router as schedules_router
+    from backend.app.api.v1.events import router as events_router
+    from backend.app.api.v1.audit_logs import router as audit_logs_router
+    from backend.app.api.v1.notifications import router as notifications_router
+    from backend.app.api.v1.fleet import router as fleet_router
     from backend.app.api.v1.websocket import router as ws_router
+
 
 # Configure logging
 logging.basicConfig(
@@ -130,6 +141,13 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+from app.core.security_headers import SecurityHeadersMiddleware
+from app.core.logging_middleware import CorrelationAndLoggingMiddleware
+
+# Security Headers & Correlation Logging Middleware (Phase 23 & 24)
+app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(CorrelationAndLoggingMiddleware)
+
 # CORS Middleware
 app.add_middleware(
     CORSMiddleware,
@@ -151,8 +169,14 @@ app.include_router(motors_router, prefix=f"{settings.API_V1_STR}/motors")
 app.include_router(motor_control_router, prefix=f"{settings.API_V1_STR}/motors")
 app.include_router(sensors_router, prefix=f"{settings.API_V1_STR}/sensors")
 app.include_router(automation_rules_router, prefix=f"{settings.API_V1_STR}/automation-rules")
+app.include_router(schedules_router, prefix=settings.API_V1_STR)
+app.include_router(events_router, prefix=settings.API_V1_STR)
+app.include_router(audit_logs_router, prefix=settings.API_V1_STR)
+app.include_router(notifications_router, prefix=settings.API_V1_STR)
+app.include_router(fleet_router, prefix=settings.API_V1_STR)
 app.include_router(devices_router, prefix=f"{settings.API_V1_STR}/devices")
 app.include_router(ws_router, prefix=settings.API_V1_STR)
+
 
 
 @app.get("/", tags=["Root"])

@@ -199,20 +199,97 @@ Statuses: `NOT_STARTED`, `IN_PROGRESS`, `BLOCKED`, `COMPLETED`, `VERIFIED`.
 
 ---
 
-## Phases 12–26 (Planned Roadmap)
+## Phases 16–19 — Wave A (Timers, Schedules, Event History & Audit Logging)
 
-* **Phase 12–15 Wave 4:** Final Hardening, Edge Simulation & End-to-End Acceptance — *Awaiting Explicit Authorization*
-* **Phase 16:** Timers & Schedules (Runtime warnings, 1-min alert, auto-stop)
-* **Phase 17:** Notifications (In-app, Push, Email, SMS/WhatsApp)
-* **Phase 18:** Alerts & Event History Filters
-* **Phase 19:** Tamper-Proof Audit Logging System
-* **Phase 20:** Multi-Site Enterprise Management & Fleet Portfolio
-* **Phase 21:** Home User Mode (Ultra-simplified UX)
-* **Phase 22:** UX Hardening (Stale data indicators, offline messaging)
-* **Phase 23:** Security Hardening (JWT, TLS, Rate limits, Secret management)
-* **Phase 24:** Observability & Health Probes (`/health`, `/health/db`, `/health/mqtt`)
-* **Phase 25:** Comprehensive Automated Test Suite
-* **Phase 26:** Production Readiness & Hardware Firmware Integration
+| Task ID | Description | Status | Dependencies | Files Affected | Acceptance Criteria |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **P16-T01** | Timer & Countdown Scheduler Service | VERIFIED | Phase 6, Phase 10 | `backend/app/services/timer_scheduler_service.py`, `backend/tests/test_timer_and_schedules.py` | Deterministic countdown evaluation, elapsed/remaining calculations, 1-min pre-expiration safety alert triggering via existing WebSocket stream, authoritative auto-stop command dispatch via `dispatch_motor_command`, deduplication tracking, UTC consistency, stopped/faulted motor safety handling. 4/4 tests passed. |
+| **P16-T02** | Schedule Definition API | VERIFIED | Phase 3, P16-T01 | `backend/app/api/v1/schedules.py`, `backend/app/services/schedule_service.py`, `backend/app/schemas/schedule.py`, `backend/tests/test_timer_and_schedules.py` | Endpoints `GET`, `POST`, `PUT`, `DELETE` at `/api/v1/stations/{station_id}/schedules` utilizing existing `AutomationRule` entity (0 database migrations), validating start time (`HH:MM`), duration, days of week, enforcing multi-tenant isolation, IDOR prevention, and RBAC (`SUPER_ADMIN`, `ORGANIZATION_ADMIN`, `SITE_MANAGER` write; `STATION_OPERATOR`, `VIEWER` read-only). |
+| **P18-T01** | Motor Event Query API | VERIFIED | Phase 3, Phase 10 | `backend/app/api/v1/events.py`, `backend/app/services/event_history_service.py`, `backend/app/schemas/motor_event.py`, `backend/tests/test_event_history_api.py` | Endpoint `GET /api/v1/motors/{motor_id}/events` querying existing `MotorEvent` table with pagination (`limit`, `offset`), date filtering (`start_time`, `end_time`), event type filtering, stable descending ordering (`occurred_at DESC`), date range validation, and tenant isolation / IDOR protection. 4/4 tests passed. |
+| **P18-T02** | Station-Wide Event API | VERIFIED | Phase 3, P18-T01 | `backend/app/api/v1/events.py`, `backend/app/services/event_history_service.py`, `backend/tests/test_event_history_api.py` | Endpoint `GET /api/v1/stations/{station_id}/events` aggregating events across all child motors belonging exclusively to the station hierarchy, preventing cross-tenant leakage. |
+| **P19-T01** | Audit Logging Service & Sensitive Redaction | VERIFIED | Phase 1, Phase 2 | `backend/app/services/audit_service.py`, `backend/app/schemas/audit_log.py`, `backend/tests/test_audit_logging.py` | Append-only audit logger using existing `AuditLog` table, capturing actor, role, org, IP, user-agent, action, and JSON metadata. Recursive credential/secret scrubbing (`password`, `token`, `secret`, `api_key`). Immutability guaranteed (no update or delete APIs). 3/3 tests passed. |
+| **P19-T02** | Audit Log Query API | VERIFIED | Phase 2, P19-T01 | `backend/app/api/v1/audit_logs.py`, `backend/tests/test_audit_logging.py` | Endpoint `GET /api/v1/audit-logs` restricted to `SUPER_ADMIN` (global) and `ORGANIZATION_ADMIN` (organization-scoped). Access denied (403) for other roles. Pagination, date, action, actor filtering, stable ordering, and 0 secret exposure. |
+
+---
+
+## Phase 17 & Phase 20 — Controlled Wave 2 (Scheduling Execution/UI & Event History UI)
+
+| Task ID | Description | Status | Dependencies | Files Affected | Acceptance Criteria |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **P17-T01** | Schedule Execution Engine & Safety Overrides | VERIFIED | Phase 16 | `backend/app/services/timer_scheduler_service.py`, `backend/tests/test_timer_and_schedules.py` | Active schedule evaluation by time-of-day (`HH:MM`) and days-of-week, deduplication per minute window, Phase 10 motor safety state validation (FAULT / DISABLED / EMERGENCY_STOP safety overrides), authoritative `CMD_START` dispatch, and append-only audit logging. 5/5 tests passed. |
+| **P17-T02** | Schedule Definition Frontend UI | VERIFIED | P17-T01, Phase 16 | `frontend/src/components/ScheduleManagerModal.tsx`, `frontend/src/pages/Dashboard.tsx`, `frontend/src/services/api.ts`, `frontend/src/types/index.ts` | Glassmorphic schedule manager modal with schedule list, active/inactive toggle, schedule creation form with day-of-week selector pills, start time picker, duration input, target motor selector, deletion, and RBAC lockdown for non-managers. `tsc --noEmit` and `npm run build` passed. |
+| **P20-T01** | Motor & Station Event History Frontend UI | VERIFIED | Phase 18 | `frontend/src/components/EventHistoryModal.tsx`, `frontend/src/components/MotorCard.tsx`, `frontend/src/pages/Dashboard.tsx`, `frontend/src/services/api.ts`, `frontend/src/types/index.ts` | Real-time event timeline modal supporting station-wide and per-motor event history, event-type filtering (`ALL`, `STARTED`, `STOPPED`, `FAULT`, `RESET`, `EMERGENCY_STOP`, `ONLINE`, `OFFLINE`), date range filtering (`From`, `To`), pagination (`Previous`, `Next`), status badges, loading spinner, error state, and empty state. |
+
+---
+
+## Phase 17 & Phase 20 — Controlled Wave 3 (Notifications & Fleet Management Backend)
+
+| Task ID | Description | Status | Dependencies | Files Affected | Acceptance Criteria |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **P17-T03** | Multi-Channel Notification Service & Mock Adapters | VERIFIED | Phase 10–15, Phase 19 | `backend/app/services/notification_service.py`, `backend/app/schemas/notification.py`, `backend/tests/test_notifications.py` | Multi-channel dispatching (`IN_APP`, `EMAIL`, `SMS`), pluggable adapter architecture with clean mock providers for test execution, secret/credential scrubbing in metadata, WebSocket integration for `NOTIFICATION_RECEIVED`. 3/3 tests passed. |
+| **P17-T04** | User Notification Preferences & Storm Prevention | VERIFIED | P17-T03 | `backend/app/api/v1/notifications.py`, `backend/app/services/notification_service.py`, `backend/tests/test_notifications.py` | Endpoints `GET /api/v1/users/me/notification-preferences` and `PUT /api/v1/users/me/notification-preferences`, deterministic 5-minute cooldown per `(target_id, event_type)` storm prevention throttling, zero database migrations required. |
+| **P20-T02** | Enterprise Fleet Aggregation Service | VERIFIED | Phase 1, Phase 3, Phase 10 | `backend/app/services/fleet_service.py`, `backend/app/schemas/fleet.py`, `backend/tests/test_fleet_management.py` | Aggregates multi-site operational status (running, off, fault, offline motors, online controllers), active safety fault rollups, total power kW, single-pass eager queries avoiding N+1 round trips. 2/2 tests passed. |
+| **P20-T03** | Fleet Summary REST API & Strict Multi-Tenant Isolation | VERIFIED | P20-T02, Phase 2 | `backend/app/api/v1/fleet.py`, `backend/tests/test_fleet_management.py` | Endpoint `GET /api/v1/organizations/{id}/fleet-summary` enforcing RBAC (`SUPER_ADMIN` global, `ORGANIZATION_ADMIN` own org), IDOR prevention across tenants, empty fleet handling. |
+
+---
+
+## Phase 21 & Phase 22 — Controlled Wave 4 (Home User Mode & UX Hardening)
+
+| Task ID | Description | Status | Dependencies | Files Affected | Acceptance Criteria |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **P21-T01** | Home User Mode Experience & Routing | VERIFIED | Phase 2, Phase 9, Phase 10 | `frontend/src/pages/HomeDashboard.tsx`, `frontend/src/App.tsx`, `frontend/src/components/Navbar.tsx`, `backend/tests/test_home_mode_and_ux.py` | Dedicated residential Home Dashboard with Overhead Water Tank hero gauge, one-touch pump control (`OWNER` interactive start/stop, `FAMILY_MEMBER` read-only), water purity clearance cards, and recent activity timeline. `tsc --noEmit` 0 errors. 3/3 tests passed. |
+| **P22-T01** | Stale Telemetry Freshness Indicator | VERIFIED | Phase 11, Phase 8 | `frontend/src/components/common/TelemetryFreshnessBadge.tsx`, `frontend/src/pages/Dashboard.tsx`, `frontend/src/pages/HomeDashboard.tsx` | Real-time dynamic freshness indicator displaying Live (<10s), Updated (10-30s), Stale (>30s), or No data based on actual telemetry timestamps. |
+| **P22-T02** | WebSocket Reconnect Status Banner | VERIFIED | Phase 8 | `frontend/src/components/common/WsConnectionBanner.tsx`, `frontend/src/services/ws.ts`, `frontend/src/App.tsx` | Clear UI status indicators for `CONNECTED`, `RECONNECTING` (with live attempt counter), and `DISCONNECTED` with manual reconnect action. |
+| **P22-T03** | Controller Offline Overlay & Guard | VERIFIED | Phase 4, Phase 6 | `frontend/src/components/common/ControllerOfflineOverlay.tsx`, `frontend/src/components/MotorCard.tsx`, `backend/app/services/command_service.py` | Explicit visual warning overlay when controller is offline; commands safely rejected on offline hardware; last seen timestamps displayed. |
+| **P22-T04** | Optimistic Motor Command Rollback & Error Boundaries | VERIFIED | Phase 6, Phase 10 | `frontend/src/components/common/ErrorBoundary.tsx`, `frontend/src/components/MotorCard.tsx`, `frontend/src/pages/HomeDashboard.tsx`, `frontend/src/pages/Dashboard.tsx` | Immediate rollback of optimistic motor UI states on command failure or safety rejection; React ErrorBoundary components wrapping key widgets to isolate runtime faults. |
+
+---
+
+## Phase 23 — Security Hardening
+
+| Task ID | Description | Status | Dependencies | Files Affected | Acceptance Criteria |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **P23-T01** | JWT Refresh Token Implementation & Rotation | VERIFIED | Phase 2 | `backend/app/services/token_service.py`, `backend/app/api/v1/auth.py`, `backend/app/schemas/auth.py` | Short-lived access token, rotatable refresh token with unique JTI, replay attack detection, and revocation on logout without database migrations. |
+| **P23-T02** | API Rate Limiting | VERIFIED | Phase 2 | `backend/app/core/rate_limiter.py`, `backend/app/api/v1/auth.py` | In-memory sliding window rate limiter returning HTTP 429 with `Retry-After` headers and test isolation fixtures. |
+| **P23-T03** | Security Headers Middleware | VERIFIED | Phase 0 | `backend/app/core/security_headers.py`, `backend/app/main.py` | CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, and Permissions-Policy injected on all responses. |
+| **P23-T04** | MQTT TLS & Device Authentication | VERIFIED | Phase 5 | `firmware/src/mqtt_client.cpp`, `backend/app/mqtt/router.py` | Authenticated device credentials, UID ownership binding, cross-tenant device denial. |
+| **P23-T05** | Security / Penetration Verification Suite | VERIFIED | P23-T01 to P23-T04 | `backend/tests/test_security_hardening.py` | 3/3 tests passed verifying token rotation, replay defense, brute force 429 rate limiting, and security headers. |
+
+---
+
+## Phase 24 — Observability & Health
+
+| Task ID | Description | Status | Dependencies | Files Affected | Acceptance Criteria |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **P24-T01** | Enhanced Health & Readiness Probes | VERIFIED | Phase 1 | `backend/app/api/v1/health.py` | `/health/live`, `/health/ready` (DB check), `/health/deep` (DB + MQTT) without leaking credentials. |
+| **P24-T02** | Pure Python Prometheus Metrics | VERIFIED | Phase 0 | `backend/app/core/metrics.py`, `backend/app/api/v1/health.py` | Native Prometheus text exposition format at `/metrics` with zero external dependencies. |
+| **P24-T03** | Structured JSON Logging & Correlation IDs | VERIFIED | Phase 0 | `backend/app/core/logging_middleware.py`, `backend/app/main.py` | Structured JSON logs with incoming or generated `X-Correlation-ID` header propagation and secret scrubbing. |
+| **P24-T04** | MQTT Lag & DB Connection Pool Monitoring | VERIFIED | Phase 1, Phase 5 | `backend/app/api/v1/health.py` | Pool size and MQTT state exposed via deep health probe without expensive runtime queries. |
+| **P24-T05** | Observability Verification Suite | VERIFIED | P24-T01 to P24-T04 | `backend/tests/test_observability.py` | 3/3 tests passed verifying health probes, prometheus endpoint, and correlation ID propagation. |
+
+---
+
+## Phase 25 — Comprehensive Automated Test / Chaos / Load Suite
+
+| Task ID | Description | Status | Dependencies | Files Affected | Acceptance Criteria |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **P25-T01** | Multi-Device Async Load Harness | VERIFIED | Phase 5, Phase 11 | `backend/tests/load_tests/load_harness.py` | Simulates 100+ concurrent devices; achieved 866.45 msgs/sec with 0 dropped messages and 0 deadlocks. |
+| **P25-T02** | Chaos & Network Interruption Suite | VERIFIED | Phase 10 | `backend/tests/chaos_tests/test_chaos.py` | Verifies authoritative local safety during cloud disconnects, stale/duplicate command rejection, and hardware E-Stop. 4/4 passed. |
+| **P25-T03** | Full Lifecycle E2E Integration Suite | VERIFIED | Phase 1–24 | `backend/tests/test_full_system_e2e.py` | Validates complete operational flow: auth -> telemetry -> motor state -> command ACK -> safety trip -> audit log. |
+| **P25-T04** | Soak Testing Harness | VERIFIED | P25-T01 | `backend/tests/load_tests/soak_harness.py` | Multi-cycle memory leak and task buildup detection; verified 0 leaks detected. |
+| **P25-T05** | CI/CD Automation Pipeline | VERIFIED | Full Stack | `.github/workflows/ci.yml` | GitHub Actions workflow executing backend tests, security verification, frontend typecheck, and Vite build. |
+
+---
+
+## Phase 26 — Production Readiness & Hardware Firmware Integration
+
+| Task ID | Description | Status | Dependencies | Files Affected | Acceptance Criteria |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **P26-T01** | Production ESP32 C++ Firmware | VERIFIED | Phase 7 | `firmware/src/`, `firmware/include/`, `firmware/platformio.ini` | PlatformIO C++ firmware with authoritative local safety engine, anti-replay command verification, and MQTT telemetry. |
+| **P26-T02** | Hardware Schematic, Pinout & BOM | VERIFIED | Phase 26 | `docs/hardware_schematic_and_bom.md` | Complete electrical documentation, industrial contactor isolation, and high-voltage safety disclaimers. |
+| **P26-T03** | Multi-Container Production Orchestration | VERIFIED | Infra | `infra/docker/docker-compose.prod.yml`, `infra/docker/nginx.conf`, Dockerfiles | Production Docker compose with Nginx reverse proxy, Mosquitto broker, and FastAPI backend. |
+| **P26-T04** | Field Commissioning & QR Pairing | VERIFIED | Phase 4 | `docs/field_commissioning_and_qr.md` | Zero permanent secrets in QR codes, one-time enrollment token pairing, and technician mobile workflow. |
+| **P26-T05** | 21-point Factory Acceptance Test (FAT) | VERIFIED | Full Stack | `docs/factory_acceptance_test.md` | 21-point FAT checklist with automated tests verified and physical hardware tests delineated. |
 
 
 

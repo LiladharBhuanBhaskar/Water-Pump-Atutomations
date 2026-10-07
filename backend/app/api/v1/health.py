@@ -1,12 +1,16 @@
-from fastapi import APIRouter, status
+from fastapi import APIRouter, status, Response, HTTPException
+from datetime import datetime, timezone
+
 try:
     from app.core.config import settings
     from app.db.session import check_db_health
     from app.mqtt.client import mqtt_client_service
+    from app.core.metrics import get_prometheus_metrics_response
 except ImportError:
     from backend.app.core.config import settings
     from backend.app.db.session import check_db_health
     from backend.app.mqtt.client import mqtt_client_service
+    from backend.app.core.metrics import get_prometheus_metrics_response
 
 router = APIRouter(tags=["Health & Diagnostics"])
 
@@ -18,7 +22,60 @@ async def health_check():
         "status": "healthy",
         "service": settings.PROJECT_NAME,
         "environment": settings.ENVIRONMENT,
-        "version": "0.1.0-alpha"
+        "version": "0.1.0-alpha",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@router.get("/health/live", status_code=status.HTTP_200_OK)
+async def health_live():
+    """Liveness probe: verifies process is running and responding."""
+    return {"status": "alive", "timestamp": datetime.now(timezone.utc).isoformat()}
+
+
+@router.get("/health/ready", status_code=status.HTTP_200_OK)
+async def health_ready(response: Response):
+    """Readiness probe: verifies service can serve operational traffic."""
+    db_status = await check_db_health()
+    db_healthy = db_status.get("status") in ("connected", "healthy") or db_status.get("ping") == "ok"
+
+    if not db_healthy:
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        return {
+            "status": "not_ready",
+            "reason": "Database connection unhealthy",
+            "database": db_status,
+        }
+
+    return {
+        "status": "ready",
+        "database": "connected",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@router.get("/health/deep", status_code=status.HTTP_200_OK)
+async def health_deep():
+    """Detailed diagnostics health probe across all subsystems without credential leakage."""
+    db_diag = await check_db_health()
+    mqtt_diag = mqtt_client_service.get_health_status()
+    db_healthy = db_diag.get("status") in ("connected", "healthy") or db_diag.get("ping") == "ok"
+
+    return {
+        "status": "healthy" if db_healthy else "degraded",
+        "service": settings.PROJECT_NAME,
+        "environment": settings.ENVIRONMENT,
+        "database": {
+            "status": db_diag.get("status"),
+            "database_type": db_diag.get("database"),
+            "ping": db_diag.get("ping"),
+        },
+        "mqtt": {
+            "status": mqtt_diag.get("status"),
+            "connected": mqtt_diag.get("connected"),
+            "subscriptions": mqtt_diag.get("subscriptions_count", 0),
+        },
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
 
@@ -42,3 +99,8 @@ async def health_mqtt():
         "subscriptions_count": diag.get("subscriptions_count", 0)
     }
 
+
+@router.get("/metrics")
+async def prometheus_metrics():
+    """Prometheus metrics scrape endpoint."""
+    return get_prometheus_metrics_response()
