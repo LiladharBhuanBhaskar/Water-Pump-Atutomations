@@ -131,3 +131,33 @@ body {
 .glow-amber {
   box-shadow: 0 0 20px rgba(245, 158, 11, 0.35);
 }
+
+/* 3D Cube Boxes & Single-Screen Grid Architecture */
+.cube-box {
+  background: linear-gradient(145deg, rgba(30, 41, 59, 0.7) 0%, rgba(15, 23, 42, 0.9) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 6px 20px -2px rgba(0, 0, 0, 0.5), inset 0 1px 1px 0 rgba(255, 255, 255, 0.12);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.cube-box:hover {
+  border-color: rgba(6, 182, 212, 0.4);
+  box-shadow: 0 10px 28px -4px rgba(6, 182, 212, 0.18), inset 0 1px 1px 0 rgba(255, 255, 255, 0.2);
+  transform: translateY(-2px);
+}
+
+.cube-box-active {
+  background: linear-gradient(145deg, rgba(6, 78, 59, 0.7) 0%, rgba(2, 44, 34, 0.9) 100%);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  box-shadow: 0 8px 25px -2px rgba(16, 185, 129, 0.3), inset 0 1px 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.cube-hero {
+  position: relative;
+  overflow: hidden;
+  border-radius: 1.25rem;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.cube-hero:active {
+  transform: scale(0.97);
+}
