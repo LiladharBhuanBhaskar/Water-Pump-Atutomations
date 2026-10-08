@@ -1,5 +1,5 @@
 import React from 'react';
-import { Droplets, LogOut, Radio, UserCheck, Home, Layers } from 'lucide-react';
+import { Droplets, LogOut, Radio, UserCheck, Smartphone, Shield } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { Badge } from './common/Badge';
 
@@ -44,81 +44,86 @@ export const Navbar: React.FC<NavbarProps> = ({
     user?.role === 'OWNER';
 
   return (
-    <header className="border-b border-slate-800/80 bg-slate-900/60 backdrop-blur-xl sticky top-0 z-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+    <header className="border-b border-slate-800/80 bg-slate-900/80 backdrop-blur-xl sticky top-0 z-50">
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-2">
         {/* Brand */}
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/25">
-            <Droplets className="w-6 h-6 text-white" />
+        <div className="flex items-center gap-2.5">
+          <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/25 flex-shrink-0">
+            <Droplets className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
           </div>
           <div>
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-lg bg-gradient-to-r from-white via-slate-100 to-cyan-400 bg-clip-text text-transparent">
+            <div className="flex items-center gap-1.5">
+              <span className="font-extrabold text-base sm:text-lg bg-gradient-to-r from-white via-slate-100 to-cyan-400 bg-clip-text text-transparent">
                 HydraControl
-              </span>
-              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-cyan-950/80 text-cyan-400 border border-cyan-800/50">
-                v0.1.0-alpha
               </span>
             </div>
             {activeOrgName && (
-              <p className="text-[11px] text-slate-400 font-medium tracking-tight">
+              <p className="hidden sm:block text-[10px] text-slate-400 font-medium">
                 Tenant: <span className="text-slate-200 font-semibold">{activeOrgName}</span>
               </p>
             )}
           </div>
         </div>
 
-        {/* Center: Mode Switcher for multi-mode authorized users */}
+        {/* Center: Mode Switcher for Admins (Admin Console vs User App) */}
         {canSwitchMode && onModeToggle && (
-          <div className="hidden md:flex items-center p-1 rounded-2xl bg-slate-950/80 border border-slate-800 shadow-inner">
+          <div className="flex items-center p-1 rounded-xl bg-slate-950/90 border border-slate-800 shadow-inner">
             <button
               type="button"
               onClick={activeMode === 'HOME' ? onModeToggle : undefined}
-              className={`flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold transition-all ${
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
                 activeMode === 'ENTERPRISE'
-                  ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 shadow-sm'
+                  ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30 shadow-sm'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              <Layers className="w-3.5 h-3.5" />
-              Enterprise
+              <Shield className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Admin</span> Console
             </button>
             <button
               type="button"
               onClick={activeMode === 'ENTERPRISE' ? onModeToggle : undefined}
-              className={`flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold transition-all ${
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
                 activeMode === 'HOME'
-                  ? 'bg-gradient-to-r from-cyan-500/20 to-blue-500/20 text-cyan-300 border border-cyan-500/30 shadow-sm'
+                  ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 shadow-sm'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              <Home className="w-3.5 h-3.5" />
-              Home Mode
+              <Smartphone className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">User</span> App
             </button>
           </div>
         )}
 
         {/* Status & User */}
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 sm:gap-4">
           {/* Gateway / WebSocket Status Indicator */}
           <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-800/60 border border-slate-700/50 shadow-inner">
-            <Radio className={`w-3.5 h-3.5 ${wsConnected ? 'text-emerald-400 animate-pulse' : 'text-amber-400'}`} />
+            <Radio
+              className={`w-3.5 h-3.5 ${
+                wsConnected ? 'text-emerald-400 animate-pulse' : 'text-amber-400'
+              }`}
+            />
             <span className="text-xs text-slate-400">Stream:</span>
-            <span className={`text-xs font-bold ${wsConnected ? 'text-emerald-400' : 'text-amber-400'}`}>
+            <span
+              className={`text-xs font-bold ${
+                wsConnected ? 'text-emerald-400' : 'text-amber-400'
+              }`}
+            >
               {wsConnected ? 'LIVE' : 'CONNECTING...'}
             </span>
           </div>
 
           {/* User profile & Logout */}
           {user && (
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 sm:gap-3">
               <div className="hidden md:flex flex-col items-end">
                 <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-200">
                   <UserCheck className="w-3.5 h-3.5 text-cyan-400" />
                   {user.name}
                 </div>
                 <Badge variant={getRoleBadgeVariant(user.role)} size="sm">
-                  {user.role}
+                  {user.role === 'SUPER_ADMIN' ? 'Admin' : 'Operator'}
                 </Badge>
               </div>
 

@@ -1,0 +1,17 @@
+{
+  "short_name": "HydraControl",
+  "name": "HydraControl — Smart Water Pump Automation",
+  "description": "Smart IoT water pump automation, tank level monitoring, and schedule controller.",
+  "icons": [
+    {
+      "src": "/vite.svg",
+      "type": "image/svg+xml",
+      "sizes": "192x192 512x512"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#020617",
+  "theme_color": "#06b6d4",
+  "display": "standalone",
+  "orientation": "portrait"
+}

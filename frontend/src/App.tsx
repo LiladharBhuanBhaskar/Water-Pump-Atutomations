@@ -17,17 +17,21 @@ const MainLayout: React.FC = () => {
   const [reconnectAttempts, setReconnectAttempts] = useState<number>(0);
   const [latestWsEvent, setLatestWsEvent] = useState<WsServerEvent | null>(null);
 
-  // Home Mode vs Enterprise Mode state (Phase 21)
-  const isResidentialUser = user?.role === 'OWNER' || user?.role === 'FAMILY_MEMBER';
+  // Default view routing: Admins get Enterprise Admin Console, Operators/Users get User App
+  const isOperatorOrHomeUser =
+    user?.role === 'STATION_OPERATOR' ||
+    user?.role === 'OWNER' ||
+    user?.role === 'FAMILY_MEMBER' ||
+    user?.role === 'VIEWER';
   const [viewMode, setViewMode] = useState<'ENTERPRISE' | 'HOME'>('ENTERPRISE');
 
   useEffect(() => {
-    if (isResidentialUser) {
+    if (isOperatorOrHomeUser) {
       setViewMode('HOME');
     } else {
       setViewMode('ENTERPRISE');
     }
-  }, [isResidentialUser]);
+  }, [isOperatorOrHomeUser]);
 
   useEffect(() => {
     if (isAuthenticated && token) {

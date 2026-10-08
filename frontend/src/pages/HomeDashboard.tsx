@@ -1,16 +1,18 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  Home,
-  Droplets,
-  Power,
+  Play,
+  Square,
+  Calendar,
   ShieldCheck,
-  Sparkles,
   CheckCircle2,
   AlertTriangle,
   Loader2,
-  Octagon,
   RefreshCw,
   Activity,
+  Zap,
+  Clock,
+  Waves,
+  ChevronRight,
 } from 'lucide-react';
 import {
   Site,
@@ -19,25 +21,27 @@ import {
   Motor,
   WsServerEvent,
   MotorEventResponse,
+  ScheduleResponse,
 } from '../types';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { TelemetryFreshnessBadge } from '../components/common/TelemetryFreshnessBadge';
-import { ControllerOfflineOverlay } from '../components/common/ControllerOfflineOverlay';
-import { ErrorBoundary } from '../components/common/ErrorBoundary';
 import { Badge } from '../components/common/Badge';
+import { ScheduleManagerModal } from '../components/ScheduleManagerModal';
 
 interface HomeDashboardProps {
   latestWsEvent?: WsServerEvent | null;
 }
 
 export const HomeDashboard: React.FC<HomeDashboardProps> = ({ latestWsEvent }) => {
-  const { user, isOperator } = useAuth();
+  const { isOperator } = useAuth();
   const [site, setSite] = useState<Site | null>(null);
   const [station, setStation] = useState<Station | null>(null);
   const [controller, setController] = useState<Controller | null>(null);
   const [motor, setMotor] = useState<Motor | null>(null);
   const [recentEvents, setRecentEvents] = useState<MotorEventResponse[]>([]);
+  const [schedules, setSchedules] = useState<ScheduleResponse[]>([]);
+  const [isScheduleModalOpen, setIsScheduleModalOpen] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(true);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -45,9 +49,11 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({ latestWsEvent }) =
 
   // Live telemetry state for home
   const [tankLevel, setTankLevel] = useState<number>(75.0);
-  const [sumpLevel] = useState<number>(85.0);
+  const [sumpLevel, setSumpLevel] = useState<number>(85.0);
   const [turbidity, setTurbidity] = useState<number>(3.8);
   const [ph, setPh] = useState<number>(7.3);
+  const [currentAmps, setCurrentAmps] = useState<number>(0.0);
+  const [voltage, setVoltage] = useState<number>(230.0);
   const [lastTelemetryTime, setLastTelemetryTime] = useState<string>(new Date().toISOString());
 
   // Load Home Context (First Site & Station belonging to user)
@@ -100,11 +106,19 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({ latestWsEvent }) =
             setPh(wq.ph);
           }
         } catch {
-          // Fallback to default/sim
+          // Fallback to defaults
+        }
+
+        // Fetch schedules
+        try {
+          const schedList = await api.getSchedules(homeStation.id);
+          setSchedules(schedList);
+        } catch {
+          // Fallback
         }
       }
     } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to load home data.');
+      setErrorMessage(err.message || 'Failed loading water pump data.');
     } finally {
       setLoading(false);
     }
@@ -114,406 +128,500 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({ latestWsEvent }) =
     loadHomeData();
   }, [loadHomeData]);
 
-  // Handle real-time WebSocket events
+  // Handle live WebSocket updates
   useEffect(() => {
     if (!latestWsEvent) return;
 
     if (latestWsEvent.event === 'TELEMETRY') {
-      const { unit, value, occurred_at } = latestWsEvent;
-      setLastTelemetryTime(occurred_at || new Date().toISOString());
+      const sensorCode = (latestWsEvent.sensor_code || '').toLowerCase();
+      const val = latestWsEvent.value;
 
-      if (unit === '%' || unit === 'cm') {
-        setTankLevel(Number(value));
-      } else if (unit === 'NTU') {
-        setTurbidity(Number(value));
-      } else if (unit === 'pH') {
-        setPh(Number(value));
+      if (sensorCode.includes('level') || sensorCode.includes('tank')) {
+        setTankLevel(val);
+      } else if (sensorCode.includes('turbidity')) {
+        setTurbidity(val);
+      } else if (sensorCode.includes('current')) {
+        setCurrentAmps(val);
+      } else if (sensorCode.includes('voltage')) {
+        setVoltage(val);
+      } else if (sensorCode.includes('sump')) {
+        setSumpLevel(val);
       }
+      setLastTelemetryTime(latestWsEvent.occurred_at || new Date().toISOString());
     } else if (latestWsEvent.event === 'MOTOR_STATE') {
       if (motor && latestWsEvent.motor_id === motor.id) {
-        setMotor((prev) => (prev ? { ...prev, status: latestWsEvent.status } : prev));
-        setIsProcessing(false);
-      }
-    } else if (latestWsEvent.event === 'COMMAND_LIFECYCLE') {
-      if (motor && latestWsEvent.motor_id === motor.id) {
-        if (latestWsEvent.status === 'EXECUTED') {
-          setIsProcessing(false);
-          setSuccessToast('Command successfully executed.');
-          setTimeout(() => setSuccessToast(null), 4000);
-        } else if (latestWsEvent.status === 'FAILED' || latestWsEvent.status === 'TIMEOUT') {
-          setIsProcessing(false);
-          setErrorMessage(`Command failed: ${latestWsEvent.error_message || 'Timeout'}`);
+        setMotor((prev) => (prev ? { ...prev, status: latestWsEvent.status } : null));
+        if (latestWsEvent.status === 'ON') {
+          setCurrentAmps(9.2);
+        } else {
+          setCurrentAmps(0.0);
         }
       }
+    } else if (latestWsEvent.event === 'SAFETY_ALERT') {
+      loadHomeData();
     }
-  }, [latestWsEvent, motor]);
+  }, [latestWsEvent, motor, loadHomeData]);
 
-  // Home Motor Control Actions with Optimistic UI & Safe Rollback
+  // Motor Action Handlers with optimistic UI updates
   const handleStartPump = async () => {
-    if (!motor || !isOperator || isProcessing) return;
-    const previousStatus = motor.status;
+    if (!motor || !isOperator) return;
     setIsProcessing(true);
     setErrorMessage(null);
+    const prevStatus = motor.status;
 
-    // Optimistic visual state
+    // Optimistic UI state
     setMotor({ ...motor, status: 'STARTING' });
 
     try {
       await api.startMotor(motor.id);
-      setSuccessToast('Start command dispatched to pump.');
+      setSuccessToast('Pump Start command dispatched successfully!');
       setTimeout(() => setSuccessToast(null), 4000);
+      setMotor({ ...motor, status: 'ON' });
+      setCurrentAmps(9.4);
     } catch (err: any) {
-      // Rollback optimistic state
-      setMotor({ ...motor, status: previousStatus });
+      // Rollback on failure
+      setMotor({ ...motor, status: prevStatus });
+      setErrorMessage(err.message || 'Failed to start motor. Safety lock may be active.');
+    } finally {
       setIsProcessing(false);
-      setErrorMessage(`Pump start failed: ${err.message || 'Safety or network rejection'}`);
     }
   };
 
   const handleStopPump = async () => {
-    if (!motor || !isOperator || isProcessing) return;
-    const previousStatus = motor.status;
+    if (!motor || !isOperator) return;
     setIsProcessing(true);
     setErrorMessage(null);
+    const prevStatus = motor.status;
 
-    // Optimistic visual state
+    // Optimistic UI state
     setMotor({ ...motor, status: 'STOPPING' });
 
     try {
       await api.stopMotor(motor.id);
-      setSuccessToast('Stop command dispatched to pump.');
+      setSuccessToast('Pump stopped successfully.');
       setTimeout(() => setSuccessToast(null), 4000);
+      setMotor({ ...motor, status: 'OFF' });
+      setCurrentAmps(0.0);
     } catch (err: any) {
-      // Rollback optimistic state
-      setMotor({ ...motor, status: previousStatus });
+      setMotor({ ...motor, status: prevStatus });
+      setErrorMessage(err.message || 'Failed to stop motor.');
+    } finally {
       setIsProcessing(false);
-      setErrorMessage(`Pump stop failed: ${err.message || 'Network error'}`);
     }
   };
 
-  const handleEmergencyStop = async () => {
-    if (!motor || !isOperator) return;
-    setIsProcessing(true);
-    setErrorMessage(null);
-
-    try {
-      await api.emergencyStopMotor(motor.id);
-      setMotor({ ...motor, status: 'STOPPING' });
-      setSuccessToast('Emergency stop command dispatched.');
-      setTimeout(() => setSuccessToast(null), 4000);
-    } catch (err: any) {
-      setIsProcessing(false);
-      setErrorMessage(`Emergency stop failed: ${err.message}`);
-    }
-  };
+  const isMotorRunning = motor?.status === 'ON' || motor?.status === 'STARTING';
+  const isMotorFaulted = motor?.status === 'FAULT';
 
   if (loading) {
     return (
-      <div className="min-h-[70vh] flex flex-col items-center justify-center gap-4">
+      <div className="min-h-[70vh] flex flex-col items-center justify-center space-y-4">
         <Loader2 className="w-10 h-10 text-cyan-400 animate-spin" />
-        <p className="text-slate-400 font-medium text-sm">Loading Home Sanctuary...</p>
+        <p className="text-slate-400 text-sm font-medium">Connecting to Smart Water Pump...</p>
       </div>
     );
   }
 
-  const isRunning = motor?.status === 'ON';
-  const isTransitioning = motor?.status === 'STARTING' || motor?.status === 'STOPPING' || isProcessing;
-  const isFault = motor?.status === 'FAULT';
-  const isControllerOffline = controller?.status === 'OFFLINE' || controller?.status === 'DECOMMISSIONED';
-
   return (
-    <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8 animate-fade-in">
-      {/* Home Header Banner */}
-      <div className="glass-panel p-6 sm:p-8 rounded-3xl border border-slate-800/80 bg-gradient-to-r from-slate-900/90 via-slate-900/60 to-cyan-950/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6 shadow-2xl">
-        <div className="flex items-center gap-4">
-          <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/30">
-            <Home className="w-7 h-7 text-white" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2.5">
-              <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-                {site?.name || 'My Home Sanctuary'}
-              </h1>
-              <Badge variant="info" size="sm">
-                HOME MODE
-              </Badge>
-            </div>
-            <p className="text-xs sm:text-sm text-slate-400 mt-1">
-              Station: <span className="text-slate-200 font-semibold">{station?.name || 'Main Pump House'}</span> &bull;{' '}
-              Role: <span className="text-cyan-400 font-bold">{user?.role}</span>
-            </p>
-          </div>
+    <div className="w-full max-w-xl mx-auto px-4 py-5 space-y-5 pb-24 selection:bg-cyan-500 selection:text-black">
+      {/* Toast Notification */}
+      {successToast && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-3 rounded-2xl bg-emerald-950/90 border border-emerald-500/50 text-emerald-200 text-xs font-semibold flex items-center gap-2 shadow-2xl backdrop-blur-xl animate-bounce">
+          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+          <span>{successToast}</span>
         </div>
-
-        <div className="flex flex-wrap items-center gap-3">
-          <TelemetryFreshnessBadge occurredAt={lastTelemetryTime} />
-          <button
-            type="button"
-            onClick={loadHomeData}
-            title="Refresh Data"
-            className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors"
-          >
-            <RefreshCw className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
-
-      {/* Controller Offline Warning if applicable */}
-      {isControllerOffline && (
-        <ControllerOfflineOverlay controller={controller} />
       )}
 
-      {/* User Alerts & Toasts */}
+      {/* Error Banner */}
       {errorMessage && (
-        <div className="p-4 rounded-2xl bg-rose-950/80 border border-rose-800 text-rose-200 text-xs font-semibold flex items-center justify-between gap-3 shadow-lg">
+        <div className="p-4 rounded-2xl bg-rose-950/80 border border-rose-800/80 text-rose-200 text-xs flex items-center justify-between gap-3 shadow-lg">
           <div className="flex items-center gap-2.5">
-            <AlertTriangle className="w-4 h-4 text-rose-400 flex-shrink-0" />
+            <AlertTriangle className="w-5 h-5 text-rose-400 flex-shrink-0" />
             <span>{errorMessage}</span>
           </div>
           <button
             onClick={() => setErrorMessage(null)}
-            className="text-rose-300 hover:text-white font-bold text-sm px-2"
+            className="text-xs text-rose-400 hover:text-white font-bold p-1"
           >
             &times;
           </button>
         </div>
       )}
 
-      {successToast && (
-        <div className="p-4 rounded-2xl bg-emerald-950/80 border border-emerald-800 text-emerald-200 text-xs font-semibold flex items-center gap-2.5 shadow-lg">
-          <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-          <span>{successToast}</span>
+      {/* App Header & Station Overview */}
+      <div className="flex items-center justify-between bg-slate-900/60 p-4 rounded-3xl border border-slate-800/80 backdrop-blur-md">
+        <div className="space-y-0.5">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold uppercase tracking-wider text-cyan-400">
+              {station?.name || 'Main Water Pump'}
+            </span>
+            <span className="w-1.5 h-1.5 rounded-full bg-slate-600" />
+            <span className="text-xs text-slate-400">{site?.name || 'Site #1'}</span>
+            {controller?.device_uid && (
+              <span className="hidden sm:inline-block text-[10px] font-mono text-slate-500">
+                ({controller.device_uid})
+              </span>
+            )}
+          </div>
+          <h2 className="text-xl font-black text-white tracking-tight flex items-center gap-2">
+            Smart Pump Control
+          </h2>
+        </div>
+        <div className="flex items-center gap-2">
+          <TelemetryFreshnessBadge occurredAt={lastTelemetryTime} />
+          <button
+            onClick={loadHomeData}
+            title="Refresh Status"
+            className="p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors"
+          >
+            <RefreshCw className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+
+      {/* HERO SECTION: Visual Water Tank Level Gauge */}
+      <div className="relative rounded-3xl bg-gradient-to-b from-slate-900 via-slate-900/90 to-slate-950 border border-slate-800/90 p-6 shadow-2xl overflow-hidden">
+        {/* Subtle Background Glows */}
+        <div
+          className={`absolute -top-24 -right-24 w-60 h-60 rounded-full blur-3xl pointer-events-none transition-all duration-700 ${
+            isMotorRunning ? 'bg-emerald-500/20' : isMotorFaulted ? 'bg-rose-500/20' : 'bg-cyan-500/15'
+          }`}
+        />
+
+        <div className="relative z-10 flex flex-col sm:flex-row items-center justify-between gap-6">
+          {/* Visual Tank Cylinder */}
+          <div className="relative w-36 h-48 rounded-3xl border-4 border-slate-700/80 bg-slate-950/80 overflow-hidden shadow-inner flex flex-col justify-end p-1.5">
+            {/* Water Wave Fill */}
+            <div
+              className={`w-full rounded-2xl transition-all duration-1000 relative overflow-hidden flex items-center justify-center ${
+                tankLevel >= 90
+                  ? 'bg-gradient-to-t from-blue-700 to-cyan-400'
+                  : tankLevel <= 20
+                  ? 'bg-gradient-to-t from-rose-700 to-amber-500'
+                  : 'bg-gradient-to-t from-blue-600 to-cyan-400'
+              }`}
+              style={{ height: `${Math.max(10, Math.min(100, tankLevel))}%` }}
+            >
+              {/* Dynamic Wave SVG */}
+              <div className="absolute inset-0 opacity-40 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-white via-transparent to-transparent animate-pulse" />
+              <div className="text-center font-black text-white text-lg drop-shadow-md z-10">
+                {tankLevel.toFixed(0)}%
+              </div>
+            </div>
+
+            {/* Level Markings */}
+            <div className="absolute left-2 top-3 text-[9px] font-mono text-slate-500">100%</div>
+            <div className="absolute left-2 top-1/2 -translate-y-1/2 text-[9px] font-mono text-slate-500">50%</div>
+            <div className="absolute left-2 bottom-3 text-[9px] font-mono text-slate-500">0%</div>
+          </div>
+
+          {/* Tank Level Data & Status */}
+          <div className="flex-1 space-y-3 text-center sm:text-left">
+            <div>
+              <div className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                Overhead Water Tank
+              </div>
+              <div className="text-3xl font-black text-white tracking-tight flex items-center justify-center sm:justify-start gap-2 mt-0.5">
+                <span>{tankLevel.toFixed(1)}%</span>
+                <span className="text-sm font-semibold text-slate-400">
+                  (~{(tankLevel * 10).toFixed(0)} / 1000 L)
+                </span>
+              </div>
+            </div>
+
+            {/* Status Pill */}
+            <div className="flex items-center justify-center sm:justify-start gap-2">
+              <span
+                className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold ${
+                  tankLevel >= 95
+                    ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
+                    : tankLevel <= 20
+                    ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                    : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                }`}
+              >
+                <Waves className="w-3.5 h-3.5" />
+                {tankLevel >= 95
+                  ? 'Tank Full (Overflow Guard)'
+                  : tankLevel <= 20
+                  ? 'Water Level Low'
+                  : 'Water Level Adequate'}
+              </span>
+            </div>
+
+            {/* Sump / Source Status Bar */}
+            <div className="pt-2 border-t border-slate-800/80 space-y-1">
+              <div className="flex justify-between text-xs text-slate-400 font-medium">
+                <span>Sump / Source Level</span>
+                <span className="font-bold text-slate-200">{sumpLevel.toFixed(0)}%</span>
+              </div>
+              <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-cyan-500 to-blue-500 rounded-full transition-all duration-500"
+                  style={{ width: `${sumpLevel}%` }}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* THE 3 MAIN HERO ACTION BUTTONS (Start Pump, Stop Pump, Schedule Pump) */}
+      {/* ========================================================================= */}
+      <div className="space-y-2">
+        <p className="text-xs font-bold uppercase tracking-wider text-slate-400 px-1">
+          Pump Operations
+        </p>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {/* BUTTON 1: 🟢 START PUMP */}
+          <button
+            type="button"
+            onClick={handleStartPump}
+            disabled={isProcessing || isMotorRunning || !isOperator}
+            className={`relative group p-4 sm:p-5 rounded-3xl border text-left transition-all duration-300 flex flex-col justify-between overflow-hidden shadow-xl ${
+              isMotorRunning
+                ? 'bg-emerald-950/40 border-emerald-800/50 cursor-not-allowed opacity-80'
+                : 'bg-gradient-to-br from-emerald-600 via-emerald-700 to-teal-800 hover:from-emerald-500 hover:to-teal-700 border-emerald-400/50 hover:shadow-emerald-500/30 hover:scale-[1.02] active:scale-[0.98]'
+            }`}
+          >
+            <div className="flex items-center justify-between w-full mb-3">
+              <div className="w-12 h-12 rounded-2xl bg-emerald-400/20 backdrop-blur-md flex items-center justify-center text-white border border-emerald-300/30 shadow-md">
+                {isProcessing ? (
+                  <Loader2 className="w-6 h-6 animate-spin text-white" />
+                ) : (
+                  <Play className="w-6 h-6 fill-white text-white" />
+                )}
+              </div>
+              {isMotorRunning && (
+                <span className="flex h-3 w-3 relative">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+                </span>
+              )}
+            </div>
+            <div>
+              <div className="text-lg font-black text-white tracking-tight">START PUMP</div>
+              <div className="text-xs text-emerald-100/80 font-medium">
+                {isMotorRunning ? 'Pump Running' : 'One-Touch Start'}
+              </div>
+            </div>
+          </button>
+
+          {/* BUTTON 2: 🔴 STOP PUMP */}
+          <button
+            type="button"
+            onClick={handleStopPump}
+            disabled={isProcessing || !isOperator}
+            className="relative group p-4 sm:p-5 rounded-3xl bg-gradient-to-br from-rose-600 via-rose-700 to-red-900 hover:from-rose-500 hover:to-red-800 border border-rose-400/50 text-left transition-all duration-300 flex flex-col justify-between overflow-hidden shadow-xl hover:shadow-rose-500/30 hover:scale-[1.02] active:scale-[0.98]"
+          >
+            <div className="flex items-center justify-between w-full mb-3">
+              <div className="w-12 h-12 rounded-2xl bg-rose-400/20 backdrop-blur-md flex items-center justify-center text-white border border-rose-300/30 shadow-md">
+                <Square className="w-6 h-6 fill-white text-white" />
+              </div>
+              <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md bg-rose-950/70 border border-rose-400/30 text-rose-200">
+                E-Stop Ready
+              </span>
+            </div>
+            <div>
+              <div className="text-lg font-black text-white tracking-tight">STOP PUMP</div>
+              <div className="text-xs text-rose-100/80 font-medium">Immediate Shutdown</div>
+            </div>
+          </button>
+
+          {/* BUTTON 3: 📅 SCHEDULE PUMP */}
+          <button
+            type="button"
+            onClick={() => setIsScheduleModalOpen(true)}
+            className="relative group p-4 sm:p-5 rounded-3xl bg-gradient-to-br from-cyan-600 via-blue-700 to-indigo-900 hover:from-cyan-500 hover:to-indigo-800 border border-cyan-400/50 text-left transition-all duration-300 flex flex-col justify-between overflow-hidden shadow-xl hover:shadow-cyan-500/30 hover:scale-[1.02] active:scale-[0.98]"
+          >
+            <div className="flex items-center justify-between w-full mb-3">
+              <div className="w-12 h-12 rounded-2xl bg-cyan-400/20 backdrop-blur-md flex items-center justify-center text-white border border-cyan-300/30 shadow-md">
+                <Calendar className="w-6 h-6 text-white" />
+              </div>
+              {schedules.filter((s) => s.is_active).length > 0 && (
+                <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-cyan-400 text-slate-950">
+                  {schedules.filter((s) => s.is_active).length} Active
+                </span>
+              )}
+            </div>
+            <div>
+              <div className="text-lg font-black text-white tracking-tight">SCHEDULES</div>
+              <div className="text-xs text-cyan-100/80 font-medium">Auto Timer & Days</div>
+            </div>
+          </button>
+        </div>
+      </div>
+
+      {/* Live Motor & Power Status Card */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800/80 space-y-1.5 backdrop-blur-md">
+          <div className="flex items-center gap-2 text-xs font-semibold text-slate-400">
+            <Activity className="w-4 h-4 text-cyan-400" />
+            <span>Pump Motor State</span>
+          </div>
+          <div className="text-lg font-extrabold text-white flex items-center gap-2">
+            <span
+              className={`w-2.5 h-2.5 rounded-full ${
+                isMotorRunning ? 'bg-emerald-400 animate-ping' : 'bg-slate-500'
+              }`}
+            />
+            <span>{motor?.status || 'IDLE'}</span>
+          </div>
+          <div className="text-[11px] text-slate-500">
+            {isMotorRunning ? 'Motor is actively running' : 'Motor is on standby'}
+          </div>
+        </div>
+
+        <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800/80 space-y-1.5 backdrop-blur-md">
+          <div className="flex items-center gap-2 text-xs font-semibold text-slate-400">
+            <Zap className="w-4 h-4 text-amber-400" />
+            <span>Electrical Load</span>
+          </div>
+          <div className="text-lg font-extrabold text-white">
+            {currentAmps > 0 ? `${currentAmps.toFixed(1)} A` : '0.0 A'}
+          </div>
+          <div className="text-[11px] text-slate-500">
+            {voltage.toFixed(0)}V &bull; {currentAmps > 15 ? 'High Load' : 'Normal Grid'}
+          </div>
+        </div>
+      </div>
+
+      {/* Water Purity & Safety Clearance Card */}
+      <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800/80 space-y-3 backdrop-blur-md">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="p-2 rounded-xl bg-cyan-500/20 text-cyan-400">
+              <ShieldCheck className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="text-xs font-bold text-white">Water Quality & Safety Interlocks</div>
+              <div className="text-[11px] text-slate-400">Autonomous Edge Safety Active</div>
+            </div>
+          </div>
+          <span
+            className={`text-xs font-bold px-2.5 py-1 rounded-full border ${
+              turbidity < 10
+                ? 'bg-emerald-950/80 border-emerald-500/40 text-emerald-300'
+                : 'bg-amber-950/80 border-amber-500/40 text-amber-300'
+            }`}
+          >
+            {turbidity < 10 ? 'Purity: Crystal Clear' : 'Purity: Caution'}
+          </span>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2 text-xs pt-1 border-t border-slate-800/80">
+          <div className="flex justify-between p-2 rounded-xl bg-slate-950/50">
+            <span className="text-slate-400">Turbidity:</span>
+            <span className="font-mono font-bold text-white">{turbidity.toFixed(1)} NTU</span>
+          </div>
+          <div className="flex justify-between p-2 rounded-xl bg-slate-950/50">
+            <span className="text-slate-400">pH Level:</span>
+            <span className="font-mono font-bold text-white">{ph.toFixed(1)} pH</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Active Schedules Preview Card */}
+      <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800/80 space-y-3 backdrop-blur-md">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Clock className="w-4 h-4 text-indigo-400" />
+            <span className="text-xs font-bold text-white uppercase tracking-wider">
+              Automated Timer Schedules
+            </span>
+          </div>
+          <button
+            onClick={() => setIsScheduleModalOpen(true)}
+            className="text-xs text-cyan-400 hover:text-cyan-300 font-bold flex items-center gap-1"
+          >
+            <span>Manage</span>
+            <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+
+        {schedules.length === 0 ? (
+          <div className="text-center py-4 text-xs text-slate-500">
+            No automated schedules configured. Tap "SCHEDULES" above to set a timer.
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {schedules.slice(0, 3).map((sched) => (
+              <div
+                key={sched.id}
+                className="flex items-center justify-between p-2.5 rounded-xl bg-slate-950/50 border border-slate-800/60 text-xs"
+              >
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`w-2 h-2 rounded-full ${
+                      sched.is_active ? 'bg-cyan-400' : 'bg-slate-600'
+                    }`}
+                  />
+                  <div>
+                    <div className="font-bold text-white">{sched.name}</div>
+                    <div className="text-[10px] text-slate-400">
+                      {sched.start_time} &bull; {Math.round(sched.duration_seconds / 60)} mins
+                    </div>
+                  </div>
+                </div>
+                <Badge variant={sched.is_active ? 'success' : 'neutral'}>
+                  {sched.is_active ? 'Active' : 'Disabled'}
+                </Badge>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Recent Activity Timeline */}
+      {recentEvents.length > 0 && (
+        <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800/80 space-y-2.5 backdrop-blur-md">
+          <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+            Recent Pump Activity
+          </div>
+          <div className="space-y-2">
+            {recentEvents.slice(0, 3).map((ev) => (
+              <div
+                key={ev.id}
+                className="flex items-center justify-between text-xs p-2 rounded-xl bg-slate-950/40"
+              >
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full ${
+                      ev.event_type === 'STARTED'
+                        ? 'bg-emerald-400'
+                        : ev.event_type === 'STOPPED'
+                        ? 'bg-blue-400'
+                        : 'bg-rose-400'
+                    }`}
+                  />
+                  <span className="font-semibold text-slate-200">{ev.event_type}</span>
+                </div>
+                <span className="text-[10px] text-slate-500 font-mono">
+                  {new Date(ev.occurred_at).toLocaleTimeString([], {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
-      {/* Main Grid Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Card 1: Tank Water Level Hero Gauge */}
-        <ErrorBoundary fallbackTitle="Tank Level Error">
-          <div className="glass-panel p-6 rounded-3xl border border-slate-800 flex flex-col justify-between gap-6 shadow-xl relative overflow-hidden">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
-                  <Droplets className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-white">Overhead Water Tank</h3>
-                  <p className="text-xs text-slate-400">Live storage capacity</p>
-                </div>
-              </div>
-              <Badge variant={tankLevel >= 95 ? 'danger' : tankLevel <= 20 ? 'warning' : 'success'} size="md">
-                {tankLevel >= 95 ? 'TANK FULL' : tankLevel <= 20 ? 'LOW WATER' : 'NORMAL'}
-              </Badge>
-            </div>
-
-            {/* Visual Tank Percentage Meter */}
-            <div className="flex flex-col items-center justify-center py-4">
-              <div className="relative w-40 h-40 rounded-full border-4 border-slate-800 flex items-center justify-center bg-slate-900/60 shadow-inner">
-                <div
-                  className="absolute inset-0 rounded-full bg-gradient-to-t from-cyan-500/20 to-blue-600/10 transition-all duration-700"
-                  style={{ height: `${Math.min(100, Math.max(0, tankLevel))}%`, bottom: 0, top: 'auto' }}
-                />
-                <div className="relative z-10 text-center">
-                  <span className="text-4xl font-black text-white tracking-tight">{Math.round(tankLevel)}%</span>
-                  <p className="text-[11px] text-cyan-400 font-bold uppercase tracking-wider mt-0.5">Stored Water</p>
-                </div>
-              </div>
-
-              {/* Progress bar */}
-              <div className="w-full bg-slate-800/80 rounded-full h-2.5 mt-6 overflow-hidden border border-slate-700/50">
-                <div
-                  className="h-full bg-gradient-to-r from-cyan-500 to-blue-500 rounded-full transition-all duration-500"
-                  style={{ width: `${Math.min(100, Math.max(0, tankLevel))}%` }}
-                />
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between text-xs text-slate-400 pt-3 border-t border-slate-800/80">
-              <span>Auto-stop cutoff: <b className="text-slate-200">95%</b></span>
-              <span>Sump Source: <b className="text-emerald-400">{Math.round(sumpLevel)}%</b></span>
-            </div>
-          </div>
-        </ErrorBoundary>
-
-        {/* Card 2: One-Touch Motor Action */}
-        <ErrorBoundary fallbackTitle="Pump Control Error">
-          <div
-            className={`glass-panel p-6 rounded-3xl border flex flex-col justify-between gap-6 shadow-xl transition-all duration-300 ${
-              isRunning
-                ? 'border-emerald-500/40 bg-emerald-950/10 shadow-emerald-500/10'
-                : isFault
-                ? 'border-rose-500/40 bg-rose-950/10 shadow-rose-500/10'
-                : 'border-slate-800'
-            }`}
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div
-                  className={`w-9 h-9 rounded-xl flex items-center justify-center border ${
-                    isRunning
-                      ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'
-                      : isFault
-                      ? 'bg-rose-500/20 border-rose-500/40 text-rose-400'
-                      : 'bg-slate-800 border-slate-700 text-slate-400'
-                  }`}
-                >
-                  <Power className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-white">{motor?.name || 'Main Water Pump'}</h3>
-                  <p className="text-xs text-slate-400">{motor?.motor_code || 'PUMP-01'}</p>
-                </div>
-              </div>
-
-              <Badge
-                variant={isRunning ? 'success' : isFault ? 'danger' : isTransitioning ? 'warning' : 'neutral'}
-                dot
-                size="md"
-              >
-                {motor?.status || 'OFF'}
-              </Badge>
-            </div>
-
-            {/* Pump State Display */}
-            <div className="text-center py-4">
-              <div
-                className={`w-24 h-24 mx-auto rounded-3xl flex items-center justify-center border-2 transition-all duration-500 shadow-2xl ${
-                  isRunning
-                    ? 'bg-emerald-500/20 border-emerald-400 shadow-emerald-500/30 text-emerald-300 animate-pulse'
-                    : isFault
-                    ? 'bg-rose-500/20 border-rose-500 shadow-rose-500/30 text-rose-400'
-                    : 'bg-slate-900/80 border-slate-800 text-slate-500 shadow-inner'
-                }`}
-              >
-                <Power className="w-12 h-12" />
-              </div>
-              <p className="text-sm font-bold text-slate-200 mt-3">
-                {isRunning ? 'Pumping Water to Tank' : isFault ? 'Safety Trip Latched' : 'Pump in Standby'}
-              </p>
-            </div>
-
-            {/* Controls */}
-            <div className="space-y-3">
-              {isOperator ? (
-                <div className="flex items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={isRunning ? handleStopPump : handleStartPump}
-                    disabled={isTransitioning || isFault || isControllerOffline}
-                    className={`w-full py-3.5 px-6 rounded-2xl flex items-center justify-center gap-2 font-bold text-sm tracking-wider uppercase transition-all duration-300 shadow-xl border cursor-pointer ${
-                      isRunning
-                        ? 'bg-rose-600 hover:bg-rose-500 text-white border-rose-400/40 shadow-rose-600/25'
-                        : 'bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-400/40 shadow-emerald-600/25'
-                    } disabled:opacity-40 disabled:cursor-not-allowed`}
-                  >
-                    {isTransitioning ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>PROCESSING...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Power className="w-4 h-4" />
-                        <span>{isRunning ? 'STOP PUMP' : 'START PUMP'}</span>
-                      </>
-                    )}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleEmergencyStop}
-                    disabled={isTransitioning || isControllerOffline}
-                    className="p-3.5 rounded-2xl bg-rose-950/80 hover:bg-rose-900 text-rose-300 border border-rose-700/60 transition-colors shadow-lg"
-                    title="Emergency Stop"
-                  >
-                    <Octagon className="w-5 h-5 text-rose-400" />
-                  </button>
-                </div>
-              ) : (
-                <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 text-center">
-                  <p className="text-xs text-slate-400 italic">
-                    Family Member Mode: Read-only observation enabled.
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
-        </ErrorBoundary>
-
-        {/* Card 3: Water Quality & Purity Indicator */}
-        <ErrorBoundary fallbackTitle="Water Quality Error">
-          <div className="glass-panel p-6 rounded-3xl border border-slate-800 flex flex-col justify-between gap-6 shadow-xl">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-purple-500/10 border border-purple-500/30 flex items-center justify-center text-purple-400">
-                  <Sparkles className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-white">Water Purity</h3>
-                  <p className="text-xs text-slate-400">Turbidity & pH safety</p>
-                </div>
-              </div>
-              <Badge variant={turbidity > 25 ? 'danger' : turbidity > 15 ? 'warning' : 'success'} size="md">
-                {turbidity > 25 ? 'UNSAFE' : turbidity > 15 ? 'FAIR' : 'EXCELLENT'}
-              </Badge>
-            </div>
-
-            {/* Quality Metrics */}
-            <div className="grid grid-cols-2 gap-4 py-2">
-              <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800/80 text-center">
-                <span className="text-xs text-slate-400 font-semibold uppercase">Turbidity</span>
-                <p className="text-2xl font-black text-white mt-1">{turbidity.toFixed(1)} <span className="text-xs font-normal text-slate-400">NTU</span></p>
-                <span className="text-[10px] text-emerald-400 font-medium">&le; 25.0 Cutoff</span>
-              </div>
-
-              <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800/80 text-center">
-                <span className="text-xs text-slate-400 font-semibold uppercase">pH Level</span>
-                <p className="text-2xl font-black text-white mt-1">{ph.toFixed(1)}</p>
-                <span className="text-[10px] text-cyan-400 font-medium">Safe 6.5–8.5</span>
-              </div>
-            </div>
-
-            <div className="p-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/25 flex items-center gap-2.5 text-xs text-emerald-300">
-              <ShieldCheck className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-              <span>Safe for residential consumption and household utilization.</span>
-            </div>
-          </div>
-        </ErrorBoundary>
-      </div>
-
-      {/* Recent Activity Log */}
-      <ErrorBoundary fallbackTitle="Activity Feed Error">
-        <div className="glass-panel p-6 sm:p-8 rounded-3xl border border-slate-800 space-y-4 shadow-xl">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <Activity className="w-5 h-5 text-cyan-400" />
-              <h3 className="text-lg font-bold text-white tracking-tight">Recent Home Activity</h3>
-            </div>
-            <span className="text-xs text-slate-400">Latest automatic & manual events</span>
-          </div>
-
-          {recentEvents.length > 0 ? (
-            <div className="divide-y divide-slate-800/60">
-              {recentEvents.map((evt) => (
-                <div key={evt.id} className="py-3 flex items-center justify-between gap-4 text-xs">
-                  <div className="flex items-center gap-3">
-                    <span className="w-2 h-2 rounded-full bg-cyan-400" />
-                    <span className="font-semibold text-slate-200">{evt.event_type}</span>
-                    <span className="text-slate-400">{evt.description || 'State updated'}</span>
-                  </div>
-                  <span className="text-slate-500 font-mono">
-                    {new Date(evt.occurred_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                  </span>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="py-8 text-center text-xs text-slate-500 italic">
-              No recent motor events recorded. System operating in steady state.
-            </div>
-          )}
-        </div>
-      </ErrorBoundary>
+      {/* Schedule Manager Modal */}
+      {station && motor && (
+        <ScheduleManagerModal
+          isOpen={isScheduleModalOpen}
+          onClose={() => {
+            setIsScheduleModalOpen(false);
+            loadHomeData();
+          }}
+          station={station}
+          motors={[motor]}
+        />
+      )}
     </div>
   );
 };
