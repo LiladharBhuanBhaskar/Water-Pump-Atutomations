@@ -10,7 +10,6 @@ import {
   RefreshCw,
   Plus,
   AlertTriangle,
-  ChevronRight,
   CheckCircle2,
   Calendar,
   LogOut,
@@ -37,7 +36,7 @@ interface HomeDashboardProps {
 
 export const HomeDashboard: React.FC<HomeDashboardProps> = ({
   latestWsEvent,
-  wsConnected = true,
+  wsConnected: _wsConnected = true,
   onAdminSwitch,
 }) => {
   const { user, logout, isOperator } = useAuth();
@@ -219,52 +218,39 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
         </div>
       )}
 
-      {/* Disconnected Banner (Matching Left Screenshot) */}
-      {!wsConnected && (
-        <div className="rounded-2xl bg-rose-50 border border-rose-200/80 px-3.5 py-2.5 flex items-center justify-between shadow-sm">
-          <div className="flex items-center gap-2 text-[11px] font-semibold text-rose-600">
-            <AlertTriangle className="w-4 h-4 text-rose-500 flex-shrink-0" />
-            <span>Real-time telemetry stream is currently disconnected.</span>
-          </div>
-          <button
-            onClick={loadData}
-            className="px-2.5 py-1 rounded-xl bg-rose-100 hover:bg-rose-200 text-rose-700 text-[11px] font-bold flex items-center gap-1 transition-all flex-shrink-0"
-          >
-            <RefreshCw className="w-3 h-3" />
-            <span>Reconnect Now</span>
-          </button>
-        </div>
-      )}
-
       {/* ========================================================================= */}
-      {/* TAB 1: HOME (MATCHES SCREENSHOT 1 EXACTLY) */}
+      {/* TAB 1: HOME */}
       {/* ========================================================================= */}
       {activeTab === 'HOME' && (
         <>
           {/* Station Status Header Card */}
-          <div className="mobile-card p-3.5 flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <div className="w-3 h-3 rounded-full bg-blue-600 shadow-sm" />
-              <div>
-                <h2 className="text-sm font-black text-slate-900 tracking-tight">
+          <div className="mobile-card p-3.5 flex items-center justify-between gap-2.5">
+            <div className="flex items-center gap-2.5 min-w-0 flex-1">
+              <span className="relative flex h-2.5 w-2.5 flex-shrink-0">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-teal-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-teal-600"></span>
+              </span>
+              <div className="min-w-0">
+                <h2 className="text-sm font-black text-slate-900 tracking-tight leading-tight truncate">
                   {station?.name || 'Demo Water Pump Station'}
                 </h2>
-                <div className="text-[11px] text-slate-400 font-medium">
-                  {site?.name || 'Demo Main Site'} [{controller?.device_uid || 'DEMO-ESP32-001'}]
+                <div className="text-[11px] text-slate-400 font-medium truncate mt-0.5">
+                  {site?.name || 'Demo Main Site'} &bull; {controller?.device_uid || 'DEMO-ESP32-001'}
                 </div>
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-amber-50 border border-amber-200/80 text-[11px] font-bold text-amber-700">
-                <AlertTriangle className="w-3 h-3 text-amber-500" />
-                <span>Stale &bull; 1m ago</span>
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              <span className="inline-flex items-center gap-1 px-2 py-1 rounded-xl bg-amber-50 border border-amber-200/80 text-[10px] font-bold text-amber-700 whitespace-nowrap">
+                <AlertTriangle className="w-3 h-3 text-amber-500 flex-shrink-0" />
+                <span>1m ago</span>
               </span>
               <button
                 onClick={loadData}
-                className="p-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors"
+                title="Refresh Station Data"
+                className="p-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors flex-shrink-0"
               >
-                <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin text-blue-600' : ''}`} />
+                <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin text-teal-600' : ''}`} />
               </button>
             </div>
           </div>
@@ -272,29 +258,29 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
           {/* 2-COLUMN METRIC CARDS GRID */}
           <div className="grid grid-cols-2 gap-2.5">
             {/* CARD 1: OVERHEAD TANK & HEAD */}
-            <div className="mobile-card p-3.5 space-y-2 flex flex-col justify-between">
+            <div className="mobile-card p-3 space-y-2 flex flex-col justify-between">
               <div>
-                <div className="flex items-center justify-between text-[11px] font-black tracking-tight text-blue-600 uppercase">
-                  <div className="flex items-center gap-1">
-                    <Waves className="w-3.5 h-3.5" />
-                    <span>Overhead Tank & Head</span>
+                <div className="flex items-center justify-between gap-1 text-[11px] font-black tracking-tight text-teal-700 uppercase">
+                  <div className="flex items-center gap-1 min-w-0">
+                    <Waves className="w-3.5 h-3.5 flex-shrink-0 text-teal-600" />
+                    <span className="truncate">TANK LEVEL</span>
                   </div>
-                  <span className="text-[10px] font-semibold text-slate-400 lowercase">Cap: 1000L</span>
+                  <span className="text-[10px] font-semibold text-slate-400 flex-shrink-0">1000L</span>
                 </div>
 
-                <div className="flex items-baseline justify-between mt-1.5">
+                <div className="flex items-baseline justify-between mt-1">
                   <span className="text-2xl font-black text-slate-900 tracking-tight">
                     {tankLevel.toFixed(1)}%
                   </span>
-                  <span className="px-2 py-0.5 rounded-lg bg-blue-500 text-white text-[10px] font-bold">
+                  <span className="px-1.5 py-0.5 rounded-md bg-teal-600 text-white text-[10px] font-bold">
                     {tankLevel.toFixed(0)}%
                   </span>
                 </div>
 
-                {/* Blue Progress Bar */}
+                {/* Hydro-Teal Gradient Progress Bar */}
                 <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden mt-1.5">
                   <div
-                    className="h-full bg-blue-500 rounded-full transition-all duration-500"
+                    className="h-full bg-gradient-to-r from-teal-500 to-cyan-500 rounded-full transition-all duration-500"
                     style={{ width: `${Math.min(100, tankLevel)}%` }}
                   />
                 </div>
@@ -304,64 +290,64 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                 </div>
               </div>
 
-              <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[10px] font-medium text-slate-500">
-                <span>Cutoff: &ge;95% (Overflow Guard)</span>
-                <span className="text-emerald-600 font-bold">Adequate</span>
+              <div className="pt-1.5 border-t border-slate-100 flex items-center justify-between text-[10px] font-medium text-slate-500">
+                <span className="truncate">Cutoff: &ge;95%</span>
+                <span className="text-emerald-600 font-bold flex-shrink-0">Adequate</span>
               </div>
             </div>
 
             {/* CARD 2: SUMP / SOURCE LEVEL */}
-            <div className="mobile-card p-3.5 space-y-2 flex flex-col justify-between">
+            <div className="mobile-card p-3 space-y-2 flex flex-col justify-between">
               <div>
-                <div className="flex items-center justify-between text-[11px] font-black tracking-tight text-blue-600 uppercase">
-                  <div className="flex items-center gap-1">
-                    <Droplet className="w-3.5 h-3.5" />
-                    <span>Sump / Source Level</span>
+                <div className="flex items-center justify-between gap-1 text-[11px] font-black tracking-tight text-cyan-700 uppercase">
+                  <div className="flex items-center gap-1 min-w-0">
+                    <Droplet className="w-3.5 h-3.5 flex-shrink-0 text-cyan-600" />
+                    <span className="truncate">SUMP LEVEL</span>
                   </div>
-                  <span className="text-[10px] font-semibold text-slate-400 lowercase">Cap: 5000L</span>
+                  <span className="text-[10px] font-semibold text-slate-400 flex-shrink-0">5000L</span>
                 </div>
 
-                <div className="flex items-baseline justify-between mt-1.5">
+                <div className="flex items-baseline justify-between mt-1">
                   <span className="text-2xl font-black text-slate-900 tracking-tight">
                     {sumpLevel.toFixed(1)}%
                   </span>
                   <span className="text-[10px] font-semibold text-slate-500">
-                    ~{(sumpLevel * 50).toFixed(0)} L Source
+                    ~{(sumpLevel * 50).toFixed(0)} L
                   </span>
                 </div>
 
-                {/* Blue Progress Bar */}
+                {/* Cyan to Aqua Gradient Progress Bar */}
                 <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden mt-1.5">
                   <div
-                    className="h-full bg-blue-500 rounded-full transition-all duration-500"
+                    className="h-full bg-gradient-to-r from-cyan-500 to-teal-400 rounded-full transition-all duration-500"
                     style={{ width: `${Math.min(100, sumpLevel)}%` }}
                   />
                 </div>
               </div>
 
-              <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[10px] font-medium text-slate-500">
-                <span>Dry-Run Cutoff: &le;10%</span>
-                <span className="text-emerald-600 font-bold">Source Safe</span>
+              <div className="pt-1.5 border-t border-slate-100 flex items-center justify-between text-[10px] font-medium text-slate-500">
+                <span className="truncate">Dry-Run: &le;10%</span>
+                <span className="text-emerald-600 font-bold flex-shrink-0">Source Safe</span>
               </div>
             </div>
 
             {/* CARD 3: WATER FLOW RATE */}
-            <div className="mobile-card p-3.5 space-y-2 flex flex-col justify-between">
+            <div className="mobile-card p-3 space-y-2 flex flex-col justify-between">
               <div>
-                <div className="flex items-center justify-between text-[11px] font-black tracking-tight text-blue-600 uppercase">
-                  <div className="flex items-center gap-1">
-                    <Gauge className="w-3.5 h-3.5" />
-                    <span>Water Flow Rate</span>
+                <div className="flex items-center justify-between gap-1 text-[11px] font-black tracking-tight text-teal-700 uppercase">
+                  <div className="flex items-center gap-1 min-w-0">
+                    <Gauge className="w-3.5 h-3.5 flex-shrink-0 text-teal-600" />
+                    <span className="truncate">FLOW RATE</span>
                   </div>
-                  <span className="text-[10px] font-semibold text-slate-400">Hall-Sensor</span>
+                  <span className="text-[10px] font-semibold text-slate-400 flex-shrink-0">Sensor</span>
                 </div>
 
-                <div className="flex items-baseline justify-between mt-1.5">
+                <div className="flex items-baseline justify-between mt-1">
                   <span className="text-2xl font-black text-slate-900 tracking-tight">
-                    {flowRateLpm.toFixed(1)} <span className="text-xs font-bold text-slate-500">L/min</span>
+                    {flowRateLpm.toFixed(1)} <span className="text-xs font-bold text-slate-400">L/m</span>
                   </span>
                   <span
-                    className={`px-2 py-0.5 rounded-lg text-[10px] font-bold ${
+                    className={`px-1.5 py-0.5 rounded-md text-[10px] font-bold ${
                       isMotorRunning
                         ? 'bg-emerald-100 text-emerald-700'
                         : 'bg-slate-100 text-slate-600'
@@ -376,26 +362,26 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                 </div>
               </div>
 
-              <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[10px] font-medium text-slate-500">
-                <span>Flow Protection:</span>
+              <div className="pt-1.5 border-t border-slate-100 flex items-center justify-between text-[10px] font-medium text-slate-500">
+                <span>Protection:</span>
                 <span className="text-emerald-600 font-bold">Primed &bull; Active</span>
               </div>
             </div>
 
             {/* CARD 4: WATER QUALITY */}
-            <div className="mobile-card p-3.5 space-y-2 flex flex-col justify-between">
+            <div className="mobile-card p-3 space-y-2 flex flex-col justify-between">
               <div>
-                <div className="flex items-center justify-between text-[11px] font-black tracking-tight text-amber-500 uppercase">
-                  <div className="flex items-center gap-1">
-                    <Shield className="w-3.5 h-3.5 text-amber-500" />
-                    <span>Water Quality</span>
+                <div className="flex items-center justify-between gap-1 text-[11px] font-black tracking-tight text-amber-500 uppercase">
+                  <div className="flex items-center gap-1 min-w-0">
+                    <Shield className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
+                    <span className="truncate">WATER QUALITY</span>
                   </div>
-                  <span className="px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-600 border border-emerald-200 text-[10px] font-bold">
+                  <span className="px-1.5 py-0.5 rounded-md bg-emerald-50 text-emerald-600 border border-emerald-200 text-[10px] font-bold flex-shrink-0">
                     Clean
                   </span>
                 </div>
 
-                <div className="grid grid-cols-2 gap-1.5 mt-2">
+                <div className="grid grid-cols-2 gap-1.5 mt-1.5">
                   <div>
                     <div className="text-[10px] text-slate-400 font-medium">Turbidity</div>
                     <div className="text-base font-black text-slate-900">
@@ -411,32 +397,32 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                 </div>
               </div>
 
-              <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[10px] font-medium text-slate-500">
-                <span>Safety Cutoff:</span>
+              <div className="pt-1.5 border-t border-slate-100 flex items-center justify-between text-[10px] font-medium text-slate-500">
+                <span>Cutoff:</span>
                 <span className="text-slate-700 font-semibold">&gt;25 NTU Auto-Trip</span>
               </div>
             </div>
 
             {/* CARD 5: ELECTRICAL LOAD */}
-            <div className="mobile-card p-3.5 space-y-2 flex flex-col justify-between">
+            <div className="mobile-card p-3 space-y-2 flex flex-col justify-between">
               <div>
-                <div className="flex items-center justify-between text-[11px] font-black tracking-tight text-purple-600 uppercase">
-                  <div className="flex items-center gap-1">
-                    <Zap className="w-3.5 h-3.5 text-purple-600" />
-                    <span>Electrical Load</span>
+                <div className="flex items-center justify-between gap-1 text-[11px] font-black tracking-tight text-purple-600 uppercase">
+                  <div className="flex items-center gap-1 min-w-0">
+                    <Zap className="w-3.5 h-3.5 text-purple-600 flex-shrink-0" />
+                    <span className="truncate">ELECTRICAL</span>
                   </div>
-                  <span className="text-[10px] font-semibold text-slate-400">230V Grid</span>
+                  <span className="text-[10px] font-semibold text-slate-400 flex-shrink-0">230V Grid</span>
                 </div>
 
-                <div className="grid grid-cols-2 gap-1.5 mt-2">
+                <div className="grid grid-cols-2 gap-1.5 mt-1.5">
                   <div>
-                    <div className="text-[10px] text-slate-400 font-medium">Current Load</div>
+                    <div className="text-[10px] text-slate-400 font-medium">Current</div>
                     <div className="text-base font-black text-slate-900">
                       {currentAmps.toFixed(1)} A
                     </div>
                   </div>
                   <div>
-                    <div className="text-[10px] text-slate-400 font-medium">Power Rating</div>
+                    <div className="text-[10px] text-slate-400 font-medium">Power</div>
                     <div className="text-base font-black text-slate-900">
                       {powerKw.toFixed(1)} kW
                     </div>
@@ -444,47 +430,47 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                 </div>
               </div>
 
-              <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[10px] font-medium text-slate-500">
-                <span>Overload Trip:</span>
+              <div className="pt-1.5 border-t border-slate-100 flex items-center justify-between text-[10px] font-medium text-slate-500">
+                <span>Overload:</span>
                 <span className="text-emerald-600 font-bold">Safe &lt; 15A</span>
               </div>
             </div>
 
             {/* CARD 6: SAFETY INTERLOCKS */}
-            <div className="mobile-card p-3.5 space-y-2 flex flex-col justify-between">
+            <div className="mobile-card p-3 space-y-2 flex flex-col justify-between">
               <div>
-                <div className="flex items-center justify-between text-[11px] font-black tracking-tight text-emerald-600 uppercase">
-                  <div className="flex items-center gap-1">
-                    <Activity className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>Safety Interlocks</span>
+                <div className="flex items-center justify-between gap-1 text-[11px] font-black tracking-tight text-emerald-600 uppercase">
+                  <div className="flex items-center gap-1 min-w-0">
+                    <Activity className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
+                    <span className="truncate">INTERLOCKS</span>
                   </div>
-                  <span className="text-[10px] font-bold text-emerald-600">100% Locked</span>
+                  <span className="text-[10px] font-bold text-emerald-600 flex-shrink-0">100% OK</span>
                 </div>
 
                 {/* 4 Green Bullet Checks (2x2) */}
-                <div className="grid grid-cols-2 gap-1.5 mt-2 text-[10px] font-bold text-slate-800">
+                <div className="grid grid-cols-2 gap-1 mt-1.5 text-[10px] font-bold text-slate-800">
                   <div className="flex items-center gap-1 bg-slate-50 px-1.5 py-1 rounded-lg">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 flex-shrink-0" />
-                    <span className="truncate">Tank Overflow</span>
+                    <span className="truncate">Overflow</span>
                   </div>
                   <div className="flex items-center gap-1 bg-slate-50 px-1.5 py-1 rounded-lg">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 flex-shrink-0" />
-                    <span className="truncate">Dry-Run Guard</span>
+                    <span className="truncate">Dry-Run</span>
                   </div>
                   <div className="flex items-center gap-1 bg-slate-50 px-1.5 py-1 rounded-lg">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 flex-shrink-0" />
-                    <span className="truncate">Turbidity Lock</span>
+                    <span className="truncate">Turbidity</span>
                   </div>
                   <div className="flex items-center gap-1 bg-slate-50 px-1.5 py-1 rounded-lg">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 flex-shrink-0" />
-                    <span className="truncate">Hardware E-Stop</span>
+                    <span className="truncate">E-Stop</span>
                   </div>
                 </div>
               </div>
 
-              <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[10px] font-medium text-slate-500">
+              <div className="pt-1.5 border-t border-slate-100 flex items-center justify-between text-[10px] font-medium text-slate-500">
                 <span>Authority:</span>
-                <span className="text-blue-600 font-bold">Local ESP32 Engine</span>
+                <span className="text-teal-700 font-bold">Local ESP32</span>
               </div>
             </div>
           </div>
@@ -492,24 +478,24 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
           {/* BOTTOM ROW QUICK CARDS (Above Dock) */}
           <div className="grid grid-cols-2 gap-2.5 pt-0.5">
             {/* Quick Card 1: Daily Pump Schedules */}
-            <div className="mobile-card p-3 flex items-center justify-between">
+            <div className="mobile-card p-3 flex flex-col justify-between space-y-2">
               <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center flex-shrink-0">
+                <div className="w-7 h-7 rounded-lg bg-teal-50 text-teal-700 flex items-center justify-center flex-shrink-0">
                   <Clock className="w-4 h-4" />
                 </div>
-                <div>
-                  <div className="text-xs font-bold text-slate-900 leading-tight">
-                    Daily Pump Schedules
+                <div className="min-w-0">
+                  <div className="text-xs font-bold text-slate-900 leading-tight truncate">
+                    Pump Schedules
                   </div>
-                  <div className="text-[10px] text-slate-400 font-medium">
-                    {activeSchedulesCount} automated timers active
+                  <div className="text-[10px] text-slate-400 font-medium truncate">
+                    {activeSchedulesCount} active timer{activeSchedulesCount !== 1 ? 's' : ''}
                   </div>
                 </div>
               </div>
 
               <button
                 onClick={() => setIsScheduleModalOpen(true)}
-                className="px-2.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold flex items-center gap-1 shadow-sm transition-all flex-shrink-0"
+                className="w-full py-1.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-[11px] font-bold flex items-center justify-center gap-1 shadow-md shadow-teal-600/20 transition-all"
               >
                 <Plus className="w-3 h-3 stroke-[3]" />
                 <span>Configure</span>
@@ -517,26 +503,32 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
             </div>
 
             {/* Quick Card 2: Latest Event */}
-            <div className="mobile-card p-3 flex items-center justify-between">
+            <div className="mobile-card p-3 flex flex-col justify-between space-y-2">
               <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center flex-shrink-0">
+                <div className="w-7 h-7 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center flex-shrink-0">
                   <Zap className="w-4 h-4" />
                 </div>
-                <div>
-                  <div className="text-xs font-bold text-slate-900 leading-tight">Latest Event</div>
-                  <div className="text-[10px] text-slate-400 font-medium">Ready &amp; Standby</div>
+                <div className="min-w-0">
+                  <div className="text-xs font-bold text-slate-900 leading-tight truncate">
+                    Latest Event
+                  </div>
+                  <div className="text-[10px] text-slate-400 font-medium truncate">
+                    Ready &amp; Standby
+                  </div>
                 </div>
               </div>
 
-              <span
-                className={`px-2 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider flex-shrink-0 ${
-                  isMotorRunning
-                    ? 'bg-emerald-100 text-emerald-700'
-                    : 'bg-slate-100 text-slate-600'
-                }`}
-              >
-                {isMotorRunning ? 'PUMP ON' : 'PUMP IDLE'}
-              </span>
+              <div className="w-full text-center">
+                <span
+                  className={`inline-block w-full py-1 rounded-xl text-[10px] font-black uppercase tracking-wider ${
+                    isMotorRunning
+                      ? 'bg-emerald-100 text-emerald-700'
+                      : 'bg-slate-100 text-slate-600'
+                  }`}
+                >
+                  {isMotorRunning ? 'PUMP ON' : 'PUMP IDLE'}
+                </span>
+              </div>
             </div>
           </div>
         </>
@@ -549,13 +541,13 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
         <div className="space-y-3">
           {/* Header Title Bar */}
           <div className="flex items-center gap-3 pt-1">
-            <div className="w-10 h-10 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center shadow-sm">
+            <div className="w-10 h-10 rounded-2xl bg-teal-50 text-teal-700 flex items-center justify-center shadow-xs">
               <Calendar className="w-5 h-5" />
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-lg font-black text-slate-900 tracking-tight">SCHEDULES</h2>
-                <span className="px-2 py-0.5 rounded-full bg-cyan-100 text-cyan-800 text-[10px] font-extrabold">
+                <span className="px-2 py-0.5 rounded-full bg-teal-100 text-teal-800 text-[10px] font-extrabold">
                   {activeSchedulesCount} Active
                 </span>
               </div>
@@ -564,29 +556,26 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
           </div>
 
           {/* Daily Pump Schedules Card */}
-          <div className="mobile-card p-4 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center flex-shrink-0">
+          <div className="mobile-card p-4 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-2xl bg-teal-50 text-teal-700 flex items-center justify-center flex-shrink-0">
                 <Clock className="w-5 h-5" />
               </div>
-              <div>
-                <h3 className="text-sm font-bold text-slate-900">Daily Pump Schedules</h3>
-                <p className="text-xs text-slate-400 font-medium">
-                  {activeSchedulesCount} automated timers active
+              <div className="min-w-0">
+                <h3 className="text-sm font-bold text-slate-900 truncate">Daily Pump Schedules</h3>
+                <p className="text-xs text-slate-400 font-medium truncate">
+                  {activeSchedulesCount} automated timer{activeSchedulesCount !== 1 ? 's' : ''} active
                 </p>
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setIsScheduleModalOpen(true)}
-                className="px-3 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1 shadow-md shadow-blue-500/25 transition-all"
-              >
-                <Plus className="w-3.5 h-3.5 stroke-[3]" />
-                <span>Configure</span>
-              </button>
-              <ChevronRight className="w-4 h-4 text-slate-400" />
-            </div>
+            <button
+              onClick={() => setIsScheduleModalOpen(true)}
+              className="px-3.5 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-md shadow-teal-600/25 transition-all flex-shrink-0"
+            >
+              <Plus className="w-3.5 h-3.5 stroke-[3]" />
+              <span>Configure</span>
+            </button>
           </div>
 
           {/* Active Schedules List */}
@@ -600,7 +589,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                 <p>No automated timer schedules created yet.</p>
                 <button
                   onClick={() => setIsScheduleModalOpen(true)}
-                  className="px-3 py-1.5 rounded-xl bg-blue-50 text-blue-600 font-bold text-xs hover:bg-blue-100"
+                  className="px-3 py-1.5 rounded-xl bg-teal-50 text-teal-700 font-bold text-xs hover:bg-teal-100"
                 >
                   + Add First Schedule
                 </button>

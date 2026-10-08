@@ -27,20 +27,20 @@ export const MobileNavDock: React.FC<MobileNavDockProps> = ({
           onClick={() => onTabChange('HOME')}
           className={`flex flex-col items-center justify-center flex-1 py-1 transition-all ${
             activeTab === 'HOME'
-              ? 'text-blue-600 font-bold'
+              ? 'text-teal-700 font-extrabold'
               : 'text-slate-400 hover:text-slate-600 font-medium'
           }`}
         >
           <div
             className={`p-1.5 rounded-xl transition-all ${
-              activeTab === 'HOME' ? 'bg-blue-50 text-blue-600' : ''
+              activeTab === 'HOME' ? 'bg-teal-50 text-teal-700' : ''
             }`}
           >
             <Home className="w-5 h-5" />
           </div>
           <span className="text-[11px] mt-0.5">Home</span>
           {activeTab === 'HOME' && (
-            <span className="w-1 h-1 rounded-full bg-blue-600 mt-0.5" />
+            <span className="w-1.5 h-1.5 rounded-full bg-teal-600 mt-0.5" />
           )}
         </button>
 
@@ -50,20 +50,20 @@ export const MobileNavDock: React.FC<MobileNavDockProps> = ({
           onClick={() => onTabChange('SCHEDULES')}
           className={`flex flex-col items-center justify-center flex-1 py-1 transition-all ${
             activeTab === 'SCHEDULES'
-              ? 'text-blue-600 font-bold'
+              ? 'text-teal-700 font-extrabold'
               : 'text-slate-400 hover:text-slate-600 font-medium'
           }`}
         >
           <div
             className={`p-1.5 rounded-xl transition-all ${
-              activeTab === 'SCHEDULES' ? 'bg-blue-50 text-blue-600' : ''
+              activeTab === 'SCHEDULES' ? 'bg-teal-50 text-teal-700' : ''
             }`}
           >
             <Calendar className="w-5 h-5" />
           </div>
           <span className="text-[11px] mt-0.5">Schedules</span>
           {activeTab === 'SCHEDULES' && (
-            <span className="w-1 h-1 rounded-full bg-blue-600 mt-0.5" />
+            <span className="w-1.5 h-1.5 rounded-full bg-teal-600 mt-0.5" />
           )}
         </button>
 
@@ -94,20 +94,20 @@ export const MobileNavDock: React.FC<MobileNavDockProps> = ({
           onClick={() => onTabChange('HISTORY')}
           className={`flex flex-col items-center justify-center flex-1 py-1 transition-all ${
             activeTab === 'HISTORY'
-              ? 'text-blue-600 font-bold'
+              ? 'text-teal-700 font-extrabold'
               : 'text-slate-400 hover:text-slate-600 font-medium'
           }`}
         >
           <div
             className={`p-1.5 rounded-xl transition-all ${
-              activeTab === 'HISTORY' ? 'bg-blue-50 text-blue-600' : ''
+              activeTab === 'HISTORY' ? 'bg-teal-50 text-teal-700' : ''
             }`}
           >
             <BarChart2 className="w-5 h-5" />
           </div>
           <span className="text-[11px] mt-0.5">History</span>
           {activeTab === 'HISTORY' && (
-            <span className="w-1 h-1 rounded-full bg-blue-600 mt-0.5" />
+            <span className="w-1.5 h-1.5 rounded-full bg-teal-600 mt-0.5" />
           )}
         </button>
 
@@ -117,20 +117,20 @@ export const MobileNavDock: React.FC<MobileNavDockProps> = ({
           onClick={() => onTabChange('SETTINGS')}
           className={`flex flex-col items-center justify-center flex-1 py-1 transition-all ${
             activeTab === 'SETTINGS'
-              ? 'text-blue-600 font-bold'
+              ? 'text-teal-700 font-extrabold'
               : 'text-slate-400 hover:text-slate-600 font-medium'
           }`}
         >
           <div
             className={`p-1.5 rounded-xl transition-all ${
-              activeTab === 'SETTINGS' ? 'bg-blue-50 text-blue-600' : ''
+              activeTab === 'SETTINGS' ? 'bg-teal-50 text-teal-700' : ''
             }`}
           >
             <Settings className="w-5 h-5" />
           </div>
           <span className="text-[11px] mt-0.5">Settings</span>
           {activeTab === 'SETTINGS' && (
-            <span className="w-1 h-1 rounded-full bg-blue-600 mt-0.5" />
+            <span className="w-1.5 h-1.5 rounded-full bg-teal-600 mt-0.5" />
           )}
         </button>
       </nav>

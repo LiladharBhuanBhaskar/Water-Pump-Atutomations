@@ -69,7 +69,7 @@ const MainLayout: React.FC = () => {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-[#f0f4f9] flex items-center justify-center">
+      <div className="min-h-screen bg-white flex items-center justify-center">
         <Spinner size="lg" label="Initializing HydraControl..." />
       </div>
     );
@@ -82,7 +82,7 @@ const MainLayout: React.FC = () => {
   // Mobile App View (HOME mode matching provided screenshots pixel-by-pixel)
   if (viewMode === 'HOME') {
     return (
-      <div className="min-h-screen bg-[#f0f4f9] text-slate-900 flex flex-col selection:bg-blue-500 selection:text-white">
+      <div className="min-h-screen bg-white text-slate-900 flex flex-col selection:bg-teal-500 selection:text-white">
         <MobileHeader
           wsConnected={wsConnected}
           onAvatarClick={() => {
