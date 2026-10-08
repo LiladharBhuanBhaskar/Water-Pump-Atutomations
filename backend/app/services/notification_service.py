@@ -19,7 +19,7 @@ from app.schemas.notification import (
     NotificationDispatchResult,
 )
 from app.services.audit_service import sanitize_audit_metadata
-from app.websocket.streamer import stream_safety_alert
+from app.websocket.streamer import stream_safety_alert, stream_notification
 
 logger = logging.getLogger("hydracontrol.notifications")
 
@@ -37,18 +37,19 @@ class InAppNotificationProvider(BaseNotificationProvider):
 
     async def send(self, payload: NotificationPayload) -> bool:
         try:
-            await stream_safety_alert(
-                event_type=f"NOTIFICATION_{payload.severity.value}",
-                motor_id=payload.motor_id or uuid.UUID(int=0),
-                motor_code=str(payload.motor_id or "STATION"),
-                device_uid="",
+            notification_id = str(uuid.uuid4())
+            await stream_notification(
+                notification_id=notification_id,
+                title=payload.title,
+                message=payload.message,
+                severity=payload.severity.value,
+                event_type=payload.event_type,
+                organization_id=payload.organization_id,
+                site_id=payload.site_id,
                 station_id=payload.station_id,
-                description=f"{payload.title}: {payload.message}",
-                payload={
-                    "severity": payload.severity.value,
-                    "event_type": payload.event_type,
-                    "metadata": payload.metadata,
-                },
+                motor_id=payload.motor_id,
+                user_id=None,
+                metadata=payload.metadata,
                 timestamp=payload.timestamp,
             )
             return True

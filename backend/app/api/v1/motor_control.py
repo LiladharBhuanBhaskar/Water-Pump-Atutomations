@@ -5,6 +5,7 @@ Provides authenticated REST endpoints to dispatch START, STOP, and EMERGENCY_STO
 
 import uuid
 from typing import List, Optional
+from pydantic import BaseModel, Field
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,6 +24,7 @@ from app.services.command_service import (
     MotorSiteSuspendedException,
     MotorSiteInactiveException,
 )
+from app.services.timer_scheduler_service import timer_scheduler
 
 router = APIRouter(tags=["Motor Control"])
 
@@ -201,3 +203,45 @@ async def get_command_status_endpoint(
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Command '{command_id}' not found.")
 
     return command
+
+
+class MotorTimerContinueRequest(BaseModel):
+    extend_seconds: Optional[int] = Field(default=900, gt=0, le=86400, description="Duration to extend timer in seconds (default 15 mins)")
+
+
+@router.get("/{motor_id}/timer", status_code=status.HTTP_200_OK)
+async def get_motor_timer_endpoint(
+    motor_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db)
+):
+    """
+    Get active timer, elapsed runtime, and real-time countdown status for a motor.
+    """
+    timer_status = await timer_scheduler.get_motor_timer_status(session, motor_id)
+    return timer_status
+
+
+@router.post("/{motor_id}/timer/continue", status_code=status.HTTP_200_OK)
+async def continue_motor_timer_endpoint(
+    motor_id: uuid.UUID,
+    req: Optional[MotorTimerContinueRequest] = None,
+    current_user: User = Depends(require_roles(OPERATOR_ROLES)),
+    session: AsyncSession = Depends(get_db)
+):
+    """
+    Extends the active timer for a running motor (e.g. from 1-minute warning).
+    Prevents duplicate continuation, updates the authoritative end timestamp,
+    and broadcasts notifications to both Operator and Admin.
+    """
+    extend_sec = req.extend_seconds if req else 900
+    try:
+        updated_timer = await timer_scheduler.continue_motor_timer(
+            session=session,
+            motor_id=motor_id,
+            extend_seconds=extend_sec,
+            actor_id=current_user.id
+        )
+        return updated_timer
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

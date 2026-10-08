@@ -218,3 +218,58 @@ async def stream_safety_alert(
     }
 
     return await hub.broadcast_to_channels(channels, msg)
+
+
+async def stream_notification(
+    notification_id: str,
+    title: str,
+    message: str,
+    severity: str,
+    event_type: Optional[str] = None,
+    organization_id: Optional[uuid.UUID] = None,
+    site_id: Optional[uuid.UUID] = None,
+    station_id: Optional[uuid.UUID] = None,
+    motor_id: Optional[uuid.UUID] = None,
+    user_id: Optional[uuid.UUID] = None,
+    metadata: Optional[Dict[str, Any]] = None,
+    timestamp: Optional[datetime] = None,
+) -> int:
+    """
+    Broadcasts in-app notification events (NOTIFICATION_RECEIVED) to user/org/station/site/motor channels,
+    or to all active connections if no specific channel target is provided.
+    """
+    channels = _build_channel_list(
+        organization_id=organization_id,
+        site_id=site_id,
+        station_id=station_id,
+        motor_id=motor_id,
+    )
+    if user_id:
+        channels.append(f"user:{user_id}")
+
+    now = timestamp or datetime.now(timezone.utc)
+    iso_ts = now.isoformat() if hasattr(now, "isoformat") else str(now)
+
+    payload = {
+        "event": "NOTIFICATION_RECEIVED",
+        "notification_id": notification_id,
+        "title": title,
+        "message": message,
+        "severity": severity.upper(),
+        "event_type": event_type or "GENERAL",
+        "organization_id": str(organization_id) if organization_id else None,
+        "site_id": str(site_id) if site_id else None,
+        "station_id": str(station_id) if station_id else None,
+        "motor_id": str(motor_id) if motor_id else None,
+        "user_id": str(user_id) if user_id else None,
+        "metadata": metadata or {},
+        "timestamp": iso_ts,
+    }
+
+    if channels:
+        delivered = await hub.broadcast_to_channels(channels, payload)
+        if delivered == 0:
+            return await hub.broadcast_to_all(payload)
+        return delivered
+    else:
+        return await hub.broadcast_to_all(payload)

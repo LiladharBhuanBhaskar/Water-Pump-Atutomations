@@ -59,7 +59,7 @@ class WebSocketHub:
         organization_id: Optional[uuid.UUID],
         role: UserRole
     ) -> WebSocketConnection:
-        """Registers a newly accepted WebSocket connection."""
+        """Registers a newly accepted WebSocket connection and automatically subscribes to user and org channels."""
         async with self._lock:
             conn = WebSocketConnection(
                 websocket=websocket,
@@ -68,6 +68,22 @@ class WebSocketHub:
                 role=role,
             )
             self._connections[websocket] = conn
+
+            # Auto-subscribe to user:{user_id}
+            user_ch = f"user:{user_id}"
+            conn.subscriptions.add(user_ch)
+            if user_ch not in self._channel_subscribers:
+                self._channel_subscribers[user_ch] = set()
+            self._channel_subscribers[user_ch].add(websocket)
+
+            # Auto-subscribe to org:{organization_id} if set
+            if organization_id:
+                org_ch = f"org:{organization_id}"
+                conn.subscriptions.add(org_ch)
+                if org_ch not in self._channel_subscribers:
+                    self._channel_subscribers[org_ch] = set()
+                self._channel_subscribers[org_ch].add(websocket)
+
             logger.info(
                 f"WebSocket connected: user_id={user_id}, org_id={organization_id}, role={role.value}"
             )
@@ -314,8 +330,18 @@ class WebSocketHub:
                 return False, f"Parent site policy restriction: {str(e)}"
             return True, ""
 
+        elif ch_type == "user":
+            try:
+                user_uuid = uuid.UUID(ch_id)
+            except ValueError:
+                return False, "Invalid user UUID format"
+
+            if not is_super_admin and user.id != user_uuid:
+                return False, "Access denied: channel belongs to another user"
+            return True, ""
+
         else:
-            return False, f"Unsupported channel type '{ch_type}'. Supported types: org, site, station, motor, device"
+            return False, f"Unsupported channel type '{ch_type}'. Supported types: user, org, site, station, motor, device"
 
     async def broadcast_to_channels(self, channels: Sequence[str], message: Dict[str, Any]) -> int:
         """
@@ -336,6 +362,36 @@ class WebSocketHub:
             return 0
 
         # Send concurrently to all target websockets
+        dead_sockets: List[WebSocket] = []
+        delivered_count = 0
+
+        async def _safe_send(ws: WebSocket):
+            nonlocal delivered_count
+            try:
+                await ws.send_json(message)
+                delivered_count += 1
+            except (WebSocketDisconnect, RuntimeError, ConnectionResetError, Exception) as e:
+                logger.warning(f"Failed sending WebSocket message to client: {e}")
+                dead_sockets.append(ws)
+
+        await asyncio.gather(*[_safe_send(ws) for ws in target_sockets], return_exceptions=True)
+
+        if dead_sockets:
+            for dead_ws in dead_sockets:
+                await self.disconnect(dead_ws)
+
+        return delivered_count
+
+    async def broadcast_to_all(self, message: Dict[str, Any]) -> int:
+        """
+        Broadcasts a JSON message to all currently active WebSocket connections.
+        """
+        async with self._lock:
+            target_sockets = set(self._connections.keys())
+
+        if not target_sockets:
+            return 0
+
         dead_sockets: List[WebSocket] = []
         delivered_count = 0
 

@@ -13,6 +13,11 @@ import {
   CheckCircle2,
   Calendar,
   LogOut,
+  Bell,
+  Cpu,
+  Timer,
+  FastForward,
+  Square,
 } from 'lucide-react';
 import {
   Site,
@@ -22,11 +27,15 @@ import {
   WsServerEvent,
   MotorEventResponse,
   ScheduleResponse,
+  MotorTimerStatus,
 } from '../types';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { MobileNavDock, MobileTab } from '../components/MobileNavDock';
 import { ScheduleManagerModal } from '../components/ScheduleManagerModal';
+import { NotificationPreferencesModal } from '../components/NotificationPreferencesModal';
+import { DeviceCommissioningModal } from '../components/DeviceCommissioningModal';
+import { audioAlert } from '../utils/audioAlert';
 
 interface HomeDashboardProps {
   latestWsEvent?: WsServerEvent | null;
@@ -48,7 +57,12 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
   const [motor, setMotor] = useState<Motor | null>(null);
   const [recentEvents, setRecentEvents] = useState<MotorEventResponse[]>([]);
   const [schedules, setSchedules] = useState<ScheduleResponse[]>([]);
+  const [activeTimer, setActiveTimer] = useState<MotorTimerStatus | null>(null);
+  const [remainingSeconds, setRemainingSeconds] = useState<number>(0);
+  const [isExtending, setIsExtending] = useState<boolean>(false);
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState<boolean>(false);
+  const [isNotificationModalOpen, setIsNotificationModalOpen] = useState<boolean>(false);
+  const [isCommissionModalOpen, setIsCommissionModalOpen] = useState<boolean>(false);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -85,7 +99,22 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
 
       const motors = await api.getMotors(ctrl.id);
       if (motors && motors.length > 0) {
-        setMotor(motors[0]);
+        const activeMotor = motors[0];
+        setMotor(activeMotor);
+
+        // Fetch active timer & countdown state
+        try {
+          const timerRes = await api.getMotorTimer(activeMotor.id);
+          if (timerRes && timerRes.is_running) {
+            setActiveTimer(timerRes);
+            setRemainingSeconds(Math.max(0, Math.round(timerRes.remaining_seconds)));
+          } else {
+            setActiveTimer(null);
+            setRemainingSeconds(0);
+          }
+        } catch {
+          // non-blocking fallback
+        }
       }
 
       // Parallel fetch diagnostics, schedules, and events
@@ -120,11 +149,55 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
     loadData();
   }, [loadData]);
 
+  // Real-time Countdown Synchronizer
+  useEffect(() => {
+    if (!activeTimer || !activeTimer.end_time || (motor?.status !== 'ON' && motor?.status !== 'STARTING')) {
+      setRemainingSeconds(0);
+      return;
+    }
+    const updateTick = () => {
+      const target = new Date(activeTimer.end_time!).getTime();
+      const now = Date.now();
+      const diff = Math.max(0, Math.floor((target - now) / 1000));
+      setRemainingSeconds(diff);
+    };
+    updateTick();
+    const interval = setInterval(updateTick, 1000);
+    return () => clearInterval(interval);
+  }, [activeTimer, motor?.status]);
+
   // Live WebSocket updates
   useEffect(() => {
     if (!latestWsEvent) return;
 
-    if (latestWsEvent.event === 'TELEMETRY') {
+    if (latestWsEvent.event === 'NOTIFICATION_RECEIVED') {
+      const isWarning = latestWsEvent.event_type?.includes('WARNING') || latestWsEvent.severity === 'WARNING';
+      audioAlert.playBuzzer(latestWsEvent.notification_id, isWarning ? 'WARNING' : latestWsEvent.severity);
+      setToastMessage(`${latestWsEvent.title}: ${latestWsEvent.message}`);
+      setTimeout(() => setToastMessage(null), 5000);
+
+      setRecentEvents((prev) => [
+        {
+          id: latestWsEvent.notification_id,
+          motor_id: latestWsEvent.motor_id || (motor?.id || ''),
+          event_type: (latestWsEvent.event_type as any) || 'NOTIFICATION',
+          source: 'SYSTEM',
+          occurred_at: latestWsEvent.timestamp,
+          created_at: latestWsEvent.timestamp,
+          description: `${latestWsEvent.title}: ${latestWsEvent.message}`,
+          metadata: latestWsEvent.metadata,
+        },
+        ...prev.slice(0, 5),
+      ]);
+
+      if (latestWsEvent.event_type?.includes('SCHEDULE') || latestWsEvent.event_type?.includes('TIMER')) {
+        loadData();
+      }
+    } else if (latestWsEvent.event === 'SAFETY_ALERT') {
+      audioAlert.playBuzzer(latestWsEvent.timestamp, 'CRITICAL');
+      setToastMessage(`Safety Alert: ${latestWsEvent.description || latestWsEvent.event_type}`);
+      setTimeout(() => setToastMessage(null), 5000);
+    } else if (latestWsEvent.event === 'TELEMETRY') {
       const code = (latestWsEvent.sensor_code || '').toLowerCase();
       const val = latestWsEvent.value;
 
@@ -150,14 +223,23 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
           setCurrentAmps(9.4);
           setPowerKw(2.16);
           setFlowRateLpm(48.5);
+          // Refresh timer countdown
+          api.getMotorTimer(motor.id).then((t) => {
+            if (t && t.is_running) {
+              setActiveTimer(t);
+              setRemainingSeconds(Math.max(0, Math.round(t.remaining_seconds)));
+            }
+          }).catch(() => {});
         } else {
           setCurrentAmps(0.0);
           setPowerKw(0.0);
           setFlowRateLpm(0.0);
+          setActiveTimer(null);
+          setRemainingSeconds(0);
         }
       }
     }
-  }, [latestWsEvent, motor, voltage]);
+  }, [latestWsEvent, motor, voltage, loadData]);
 
   const isMotorRunning = motor?.status === 'ON' || motor?.status === 'STARTING';
 
@@ -203,6 +285,23 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
       } finally {
         setIsProcessing(false);
       }
+    }
+  };
+
+  const handleContinueTimer = async (extendSeconds: number = 900) => {
+    if (!motor || !isOperator || isExtending) return;
+    setIsExtending(true);
+    try {
+      const updated = await api.continueMotorTimer(motor.id, extendSeconds);
+      setActiveTimer(updated);
+      setRemainingSeconds(Math.max(0, Math.round(updated.remaining_seconds)));
+      setToastMessage(`Scheduled operation extended (+${Math.round(extendSeconds / 60)} min)`);
+      setTimeout(() => setToastMessage(null), 3500);
+    } catch (err: any) {
+      setToastMessage(err.message || 'Failed to extend schedule timer');
+      setTimeout(() => setToastMessage(null), 3500);
+    } finally {
+      setIsExtending(false);
     }
   };
 
@@ -254,6 +353,112 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               </button>
             </div>
           </div>
+
+          {/* ========================================================================= */}
+          {/* SCHEDULED OPERATION LIVE COUNTDOWN & 1-MINUTE WARNING BANNER */}
+          {/* ========================================================================= */}
+          {isMotorRunning && activeTimer && activeTimer.is_running && remainingSeconds > 0 && (
+            remainingSeconds <= 60 || activeTimer.is_warning_active ? (
+              /* PROMINENT 1-MINUTE PRE-EXPIRATION WARNING CARD */
+              <div className="p-4 rounded-3xl bg-gradient-to-r from-amber-500/15 via-rose-500/15 to-amber-500/15 border-2 border-amber-400/80 shadow-xl shadow-amber-500/10 space-y-3 backdrop-blur-md animate-pulse-flow">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="p-1.5 rounded-xl bg-amber-500 text-white animate-bounce">
+                      <AlertTriangle className="w-4 h-4 stroke-[2.5]" />
+                    </span>
+                    <div>
+                      <h3 className="text-xs font-black text-amber-900 uppercase tracking-wide">
+                        ⚠️ Motor Will Stop in {remainingSeconds}s
+                      </h3>
+                      <p className="text-[11px] text-amber-800 font-medium">
+                        {activeTimer.schedule_name || 'Scheduled Operation'} is about to finish.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="px-3 py-1 rounded-xl bg-amber-500 text-white font-mono font-black text-sm shadow-md">
+                    00:{String(remainingSeconds).padStart(2, '0')}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => handleContinueTimer(900)}
+                    disabled={isExtending || !isOperator}
+                    className="flex-1 py-2.5 px-3 rounded-2xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-black flex items-center justify-center gap-1.5 shadow-lg shadow-amber-600/25 transition-all active:scale-95 disabled:opacity-50"
+                  >
+                    <FastForward className="w-3.5 h-3.5 stroke-[3]" />
+                    <span>{isExtending ? 'EXTENDING...' : 'CONTINUE (+15 MIN)'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handlePowerToggle}
+                    disabled={isProcessing || !isOperator}
+                    className="py-2.5 px-4 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-black flex items-center justify-center gap-1.5 shadow-lg shadow-rose-600/25 transition-all active:scale-95 disabled:opacity-50"
+                  >
+                    <Square className="w-3.5 h-3.5 fill-current" />
+                    <span>STOP NOW</span>
+                  </button>
+                </div>
+              </div>
+            ) : (
+              /* ACTIVE SCHEDULE COUNTDOWN CARD */
+              <div className="mobile-card p-3.5 bg-gradient-to-r from-teal-500/10 via-cyan-500/10 to-teal-500/10 border-teal-300/80 shadow-lg shadow-teal-500/5 space-y-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="p-1.5 rounded-xl bg-teal-600 text-white shadow-sm">
+                      <Timer className="w-4 h-4 animate-spin" />
+                    </span>
+                    <div className="min-w-0">
+                      <div className="text-xs font-black text-teal-950 uppercase tracking-tight truncate">
+                        Scheduled Operation Active
+                      </div>
+                      <div className="text-[10px] text-teal-700 font-semibold truncate">
+                        {activeTimer.schedule_name || 'Timer Cycle'} &bull; Auto-stop at {new Date(activeTimer.end_time || '').toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <div className="px-2.5 py-1 rounded-xl bg-teal-600 text-white font-mono font-black text-xs shadow-sm">
+                      {Math.floor(remainingSeconds / 60)}:{String(remainingSeconds % 60).padStart(2, '0')}
+                    </div>
+                    {isOperator && (
+                      <button
+                        type="button"
+                        onClick={() => handleContinueTimer(900)}
+                        disabled={isExtending}
+                        title="Add 15 Minutes to active run"
+                        className="py-1 px-2 rounded-xl bg-teal-100 hover:bg-teal-200 text-teal-800 text-[10px] font-black flex items-center gap-1 border border-teal-300 transition-colors disabled:opacity-50"
+                      >
+                        <Plus className="w-2.5 h-2.5 stroke-[3]" />
+                        <span>15m</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Progress bar */}
+                <div className="w-full h-1.5 bg-teal-100 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-teal-500 to-cyan-500 rounded-full transition-all duration-1000"
+                    style={{
+                      width: `${Math.max(
+                        0,
+                        Math.min(
+                          100,
+                          ((activeTimer.duration_seconds - remainingSeconds) /
+                            Math.max(1, activeTimer.duration_seconds)) *
+                            100
+                        )
+                      )}%`,
+                    }}
+                  />
+                </div>
+              </div>
+            )
+          )}
 
           {/* 2-COLUMN METRIC CARDS GRID */}
           <div className="grid grid-cols-2 gap-2.5">
@@ -707,6 +912,26 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               </span>
             </div>
 
+            <button
+              type="button"
+              onClick={() => setIsNotificationModalOpen(true)}
+              className="w-full py-2.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 text-xs font-bold flex items-center justify-center gap-2 transition-colors border border-amber-200"
+            >
+              <Bell className="w-4 h-4 text-amber-600" />
+              <span>Notification & Alert Channels</span>
+            </button>
+
+            {station && (
+              <button
+                type="button"
+                onClick={() => setIsCommissionModalOpen(true)}
+                className="w-full py-2.5 rounded-xl bg-teal-50 hover:bg-teal-100 text-teal-800 text-xs font-bold flex items-center justify-center gap-2 transition-colors border border-teal-200"
+              >
+                <Cpu className="w-4 h-4 text-teal-600" />
+                <span>Pair / Commission New Controller</span>
+              </button>
+            )}
+
             {onAdminSwitch && (
               <button
                 type="button"
@@ -751,6 +976,24 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
           }}
           station={station}
           motors={[motor]}
+        />
+      )}
+
+      {/* Notification Preferences Modal */}
+      <NotificationPreferencesModal
+        isOpen={isNotificationModalOpen}
+        onClose={() => setIsNotificationModalOpen(false)}
+      />
+
+      {/* Device Commissioning Modal */}
+      {station && (
+        <DeviceCommissioningModal
+          isOpen={isCommissionModalOpen}
+          onClose={() => setIsCommissionModalOpen(false)}
+          station={station}
+          onDeviceCommissioned={() => {
+            loadData();
+          }}
         />
       )}
     </div>

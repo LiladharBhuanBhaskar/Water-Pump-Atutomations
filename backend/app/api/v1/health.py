@@ -104,3 +104,23 @@ async def health_mqtt():
 async def prometheus_metrics():
     """Prometheus metrics scrape endpoint."""
     return get_prometheus_metrics_response()
+
+
+@router.get("/health/time", status_code=status.HTTP_200_OK)
+async def health_time():
+    """Time & Timezone diagnostics endpoint for laptop and scheduler synchronization."""
+    from app.services.timer_scheduler_service import get_local_datetime
+    utc_now = datetime.now(timezone.utc)
+    local_now = get_local_datetime(utc_now, "Asia/Kolkata")
+    weekday_names = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"]
+    weekday_codes = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]
+    return {
+        "utc_time": utc_now.isoformat(),
+        "local_time": local_now.strftime("%Y-%m-%d %H:%M:%S"),
+        "time_hm": local_now.strftime("%H:%M"),
+        "timezone": "Asia/Kolkata",
+        "offset": "+05:30",
+        "date": local_now.strftime("%Y-%m-%d"),
+        "weekday": weekday_names[local_now.weekday()],
+        "weekday_code": weekday_codes[local_now.weekday()],
+    }

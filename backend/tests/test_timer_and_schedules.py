@@ -77,6 +77,7 @@ def helper_create_test_hierarchy():
             name="Timer Site",
             site_code=f"SITE-{uuid.uuid4().hex[:6].upper()}",
             site_type=SiteType.PUMP_STATION,
+            timezone="UTC",
             status=SiteStatus.ACTIVE,
         )
         session.add(site)

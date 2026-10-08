@@ -1,6 +1,7 @@
-import React from 'react';
-import { Droplets } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Droplets, Volume2, VolumeX } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { audioAlert } from '../utils/audioAlert';
 
 interface MobileHeaderProps {
   wsConnected: boolean;
@@ -13,6 +14,18 @@ export const MobileHeader: React.FC<MobileHeaderProps> = ({
 }) => {
   const { user } = useAuth();
   const initial = user?.name ? user.name.charAt(0).toUpperCase() : 'U';
+  const [audioUnlocked, setAudioUnlocked] = useState<boolean>(audioAlert.isUnlocked());
+
+  useEffect(() => {
+    return audioAlert.onUnlockChange((unlocked) => {
+      setAudioUnlocked(unlocked);
+    });
+  }, []);
+
+  const handleToggleAudio = async () => {
+    await audioAlert.testSound('INFO');
+    setAudioUnlocked(true);
+  };
 
   return (
     <header className="sticky top-0 z-40 bg-white/90 backdrop-blur-xl px-4 py-2.5 flex items-center justify-between gap-2 border-b border-slate-200/60 max-w-lg mx-auto w-full shadow-[0_2px_10px_rgba(0,0,0,0.02)]">
@@ -31,8 +44,23 @@ export const MobileHeader: React.FC<MobileHeaderProps> = ({
         </div>
       </div>
 
-      {/* Right Controls (Live Capsule + Profile Avatar) */}
+      {/* Right Controls (Audio Unlock + Live Capsule + Profile Avatar) */}
       <div className="flex items-center gap-2 flex-shrink-0">
+        {/* Audio Alert Status / Test Button */}
+        <button
+          type="button"
+          onClick={handleToggleAudio}
+          title={audioUnlocked ? 'Audio alerts active (Click to test sound)' : 'Audio muted - Click to enable browser buzzer'}
+          className={`flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-bold transition-all ${
+            audioUnlocked
+              ? 'bg-teal-50 text-teal-700 border border-teal-200/80 hover:bg-teal-100'
+              : 'bg-amber-50 text-amber-700 border border-amber-200/80 hover:bg-amber-100 animate-pulse'
+          }`}
+        >
+          {audioUnlocked ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
+          <span className="hidden xs:inline">{audioUnlocked ? 'Buzzer ON' : 'Enable Audio'}</span>
+        </button>
+
         {/* Stream Status Capsule Badge */}
         {wsConnected ? (
           <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200/90 text-[11px] font-bold text-emerald-700 shadow-xs">

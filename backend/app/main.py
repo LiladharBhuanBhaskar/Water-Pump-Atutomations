@@ -125,13 +125,41 @@ def print_database_identity():
     print("==================================================")
 
 
+import asyncio
+from app.db.session import AsyncSessionLocal
+from app.services.timer_scheduler_service import timer_scheduler
+
+
+async def _scheduler_background_loop():
+    logger.info("Starting background Timer & Schedule evaluator loop...")
+    while True:
+        try:
+            async with AsyncSessionLocal() as session:
+                await timer_scheduler.check_and_execute_schedules(session)
+                await timer_scheduler.check_and_process_motor_timers(session)
+                await session.commit()
+        except asyncio.CancelledError:
+            logger.info("Scheduler loop cancelled.")
+            break
+        except Exception as e:
+            logger.error(f"Error in scheduler background loop: {e}", exc_info=False)
+        await asyncio.sleep(5)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print_database_identity()
     logger.info(f"Starting {settings.PROJECT_NAME} in {settings.ENVIRONMENT} mode...")
-    # Initialize background services (MQTT client, DB connections, Watchdogs)
-    yield
-    logger.info(f"Shutting down {settings.PROJECT_NAME}...")
+    scheduler_task = asyncio.create_task(_scheduler_background_loop())
+    try:
+        yield
+    finally:
+        scheduler_task.cancel()
+        try:
+            await scheduler_task
+        except asyncio.CancelledError:
+            pass
+        logger.info(f"Shutting down {settings.PROJECT_NAME}...")
 
 app = FastAPI(
     title=settings.PROJECT_NAME,

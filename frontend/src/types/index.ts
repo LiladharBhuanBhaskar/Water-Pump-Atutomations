@@ -223,11 +223,28 @@ export interface WsSafetyAlertEvent {
   timestamp: string;
 }
 
+export interface WsNotificationReceivedEvent {
+  event: 'NOTIFICATION_RECEIVED';
+  notification_id: string;
+  title: string;
+  message: string;
+  severity: 'INFO' | 'WARNING' | 'CRITICAL' | string;
+  event_type?: string | null;
+  organization_id?: string | null;
+  site_id?: string | null;
+  station_id?: string | null;
+  motor_id?: string | null;
+  user_id?: string | null;
+  metadata?: Record<string, any>;
+  timestamp: string;
+}
+
 export type WsServerEvent =
   | WsTelemetryEvent
   | WsMotorStateEvent
   | WsCommandLifecycleEvent
-  | WsSafetyAlertEvent;
+  | WsSafetyAlertEvent
+  | WsNotificationReceivedEvent;
 
 // ==========================================
 // Phase 12–15 Domain & Safety Diagnostics Types
@@ -540,4 +557,149 @@ export interface AuditLogResponse {
   user_agent?: string | null;
   occurred_at: string;
   created_at: string;
+}
+
+// Phase 20: Enterprise Fleet Management
+export interface MotorFleetStatus {
+  total: number;
+  running: number;
+  off: number;
+  fault: number;
+  offline: number;
+  maintenance: number;
+}
+
+export interface ActiveSafetyAlertSummary {
+  motor_id: string;
+  motor_code: string;
+  station_id: string;
+  station_name: string;
+  site_id: string;
+  site_name: string;
+  status: string;
+  occurred_at: string;
+}
+
+export interface SiteFleetSummary {
+  site_id: string;
+  site_name: string;
+  site_code: string;
+  status: string;
+  station_count: number;
+  controller_count: number;
+  motor_count: number;
+  running_motors: number;
+  faulted_motors: number;
+}
+
+export interface OrganizationFleetSummary {
+  organization_id: string;
+  organization_name: string;
+  organization_code: string;
+  site_count: number;
+  station_count: number;
+  controller_count: number;
+  online_controllers: number;
+  offline_controllers: number;
+  motors: MotorFleetStatus;
+  total_sensor_count: number;
+  total_power_kw: number;
+  active_safety_alerts: ActiveSafetyAlertSummary[];
+  sites: SiteFleetSummary[];
+  generated_at: string;
+}
+
+// Phase 17: Notification Preferences
+export type NotificationChannel = 'IN_APP' | 'EMAIL' | 'SMS';
+export type NotificationSeverity = 'INFO' | 'WARNING' | 'CRITICAL';
+
+export interface NotificationPreference {
+  user_id: string;
+  email_enabled: boolean;
+  sms_enabled: boolean;
+  in_app_enabled: boolean;
+  min_severity: NotificationSeverity;
+}
+
+export interface NotificationPreferenceUpdate {
+  email_enabled?: boolean;
+  sms_enabled?: boolean;
+  in_app_enabled?: boolean;
+  min_severity?: NotificationSeverity;
+}
+
+export interface NotificationDispatchResult {
+  notification_id: string;
+  title: string;
+  severity: NotificationSeverity;
+  delivered_channels: NotificationChannel[];
+  throttled: boolean;
+  reason?: string | null;
+  timestamp: string;
+}
+
+// Device Commissioning & Status
+export interface DeviceRegistrationRequest {
+  device_uid: string;
+  firmware_version?: string;
+  ip_address?: string;
+  mac_address?: string;
+  controller_type?: ControllerType;
+}
+
+export interface DeviceRegistrationResponse {
+  controller_id: string;
+  station_id: string;
+  device_uid: string;
+  controller_name: string;
+  status: ControllerStatus;
+  device_token: string;
+  server_time: string;
+  mqtt_topic_prefix: string;
+}
+
+export interface DeviceHeartbeatRequest {
+  device_uid: string;
+  firmware_version?: string;
+  ip_address?: string;
+  uptime_seconds?: number;
+  free_heap?: number;
+  rssi?: number;
+  status?: ControllerStatus;
+}
+
+export interface DeviceHeartbeatResponse {
+  device_uid: string;
+  status: ControllerStatus;
+  server_time: string;
+  acknowledged: boolean;
+  commands_pending: number;
+}
+
+export interface DeviceLivenessResponse {
+  controller_id: string;
+  station_id: string;
+  device_uid: string;
+  controller_name: string;
+  status: ControllerStatus;
+  liveness_state: 'ONLINE' | 'STALE' | 'OFFLINE' | 'DECOMMISSIONED';
+  last_seen_at?: string | null;
+  seconds_since_last_seen?: number | null;
+}
+
+export interface MotorTimerStatus {
+  motor_id: string;
+  motor_code?: string;
+  status: MotorStatus;
+  is_running: boolean;
+  started_at?: string | null;
+  duration_seconds: number;
+  end_time?: string | null;
+  elapsed_seconds: number;
+  remaining_seconds: number;
+  is_warning_active: boolean;
+  is_expired: boolean;
+  schedule_id?: string | null;
+  schedule_name?: string | null;
+  source?: 'SCHEDULED' | 'MANUAL';
 }

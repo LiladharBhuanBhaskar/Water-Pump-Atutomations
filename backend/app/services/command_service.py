@@ -204,7 +204,7 @@ async def dispatch_motor_command(
     try:
         published = await client.publish(topic=topic, payload=mqtt_payload, qos=1)
     except Exception as e:
-        logger.error(f"Error publishing command '{command.id}' to topic '{topic}': {e}", exc_info=True)
+        logger.warning(f"MQTT publish error on topic '{topic}': {e}")
 
     if published:
         command.status = CommandStatus.SENT
@@ -264,31 +264,30 @@ async def dispatch_motor_command(
                 if transition_res.event_type in (MotorEventType.FAULT, MotorEventType.EMERGENCY_STOP):
                     await stream_safety_alert(
                         event_type=transition_res.event_type,
-                        motor_id=motor.id,
+                        station_id=station.id,
+                        device_uid=controller.device_uid,
                         motor_code=motor.motor_code,
+                        organization_id=site.organization_id,
+                        site_id=site.id,
+                        description=transition_res.reason,
+                        timestamp=command.sent_at
+                    )
+                else:
+                    await stream_motor_state(
+                        motor_id=motor.id,
+                        status=motor.status,
+                        previous_status=old_motor_status,
+                        reason=transition_res.reason,
                         device_uid=controller.device_uid,
                         organization_id=site.organization_id,
                         site_id=site.id,
                         station_id=station.id,
-                        description=transition_res.reason,
-                        payload=cmd_payload,
                         timestamp=command.sent_at
                     )
-                await stream_motor_state(
-                    motor_id=motor.id,
-                    motor_code=motor.motor_code,
-                    device_uid=controller.device_uid,
-                    status=motor.status,
-                    organization_id=site.organization_id,
-                    site_id=site.id,
-                    station_id=station.id,
-                    previous_status=old_motor_status,
-                    timestamp=command.sent_at
-                )
-        except Exception as e:
-            logger.error(f"Error streaming state/lifecycle for '{command.id}': {e}")
+        except Exception as ws_err:
+            logger.warning(f"Failed to broadcast command dispatch websocket event: {ws_err}")
     else:
-        logger.warning(f"MotorCommand '{command.id}' ({cmd_type.value}) saved as PENDING (MQTT broker not published)")
+        logger.warning(f"MotorCommand '{command.id}' queued as PENDING (MQTT broker unavailable)")
 
     return command
 

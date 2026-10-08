@@ -1,6 +1,7 @@
 import React from 'react';
-import { Droplets, LogOut, Radio, UserCheck, Smartphone, Shield } from 'lucide-react';
+import { Droplets, LogOut, Radio, UserCheck, Smartphone, Shield, Volume2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { audioAlert } from '../utils/audioAlert';
 import { Badge } from './common/Badge';
 
 interface NavbarProps {
@@ -97,6 +98,20 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* Status & User */}
         <div className="flex items-center gap-2 sm:gap-4">
+          {/* Audio Alert Status / Test Button */}
+          <button
+            type="button"
+            onClick={async () => {
+              await audioAlert.testSound('INFO');
+            }}
+            title="Click to test alert chime or unlock Web Audio"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/60 text-xs font-semibold text-cyan-300 transition-all"
+          >
+            <Volume2 className="w-3.5 h-3.5 text-cyan-400" />
+            <span className="hidden md:inline">Alert Audio:</span>
+            <span className="text-cyan-200">Test 🔊</span>
+          </button>
+
           {/* Gateway / WebSocket Status Indicator */}
           <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-800/60 border border-slate-700/50 shadow-inner">
             <Radio

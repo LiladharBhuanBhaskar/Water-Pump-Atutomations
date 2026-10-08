@@ -26,6 +26,14 @@ import {
   ScheduleUpdateRequest,
   MotorEventResponse,
   AuditLogResponse,
+  OrganizationFleetSummary,
+  NotificationPreference,
+  NotificationPreferenceUpdate,
+  NotificationDispatchResult,
+  DeviceRegistrationRequest,
+  DeviceRegistrationResponse,
+  DeviceLivenessResponse,
+  MotorTimerStatus,
 } from '../types';
 
 const API_BASE = '/api/v1';
@@ -172,10 +180,6 @@ class ApiService {
     return this.request<Controller[]>(`/controllers${qs}`);
   }
 
-  async getDeviceStatus(deviceUid: string): Promise<any> {
-    return this.request(`/devices/${deviceUid}/status`);
-  }
-
   // Motor Endpoints
   async getMotors(controllerId?: string): Promise<Motor[]> {
     const qs = controllerId ? `?controller_id=${controllerId}` : '';
@@ -212,6 +216,17 @@ class ApiService {
 
   async getMotorCommands(motorId: string): Promise<MotorCommand[]> {
     return this.request<MotorCommand[]>(`/motors/${motorId}/commands`);
+  }
+
+  async getMotorTimer(motorId: string): Promise<MotorTimerStatus> {
+    return this.request<MotorTimerStatus>(`/motors/${motorId}/timer`);
+  }
+
+  async continueMotorTimer(motorId: string, extendSeconds: number = 900): Promise<MotorTimerStatus> {
+    return this.request<MotorTimerStatus>(`/motors/${motorId}/timer/continue`, {
+      method: 'POST',
+      body: JSON.stringify({ extend_seconds: extendSeconds }),
+    });
   }
 
   async getFlowDiagnostics(motorId: string): Promise<FlowDiagnosticsResponse> {
@@ -347,6 +362,49 @@ class ApiService {
     if (params?.offset) query.append('offset', params.offset.toString());
     const qs = query.toString() ? `?${query.toString()}` : '';
     return this.request<AuditLogResponse[]>(`/audit-logs${qs}`);
+  }
+
+  // Phase 20: Fleet Summary Endpoints
+  async getFleetSummary(organizationId: string): Promise<OrganizationFleetSummary> {
+    return this.request<OrganizationFleetSummary>(`/organizations/${organizationId}/fleet-summary`);
+  }
+
+  // Phase 17: Notification Preferences Endpoints
+  async getNotificationPreferences(): Promise<NotificationPreference> {
+    return this.request<NotificationPreference>('/users/me/notification-preferences');
+  }
+
+  async updateNotificationPreferences(
+    data: NotificationPreferenceUpdate
+  ): Promise<NotificationPreference> {
+    return this.request<NotificationPreference>('/users/me/notification-preferences', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async sendTestNotification(): Promise<NotificationDispatchResult> {
+    return this.request<NotificationDispatchResult>('/notifications/test', {
+      method: 'POST',
+    });
+  }
+
+  // Device Provisioning & Liveness Endpoints
+  async getDeviceStatus(deviceUid: string): Promise<DeviceLivenessResponse> {
+    return this.request<DeviceLivenessResponse>(`/devices/${deviceUid}/status`);
+  }
+
+  async registerDevice(data: DeviceRegistrationRequest): Promise<DeviceRegistrationResponse> {
+    return this.request<DeviceRegistrationResponse>('/devices/register', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async triggerLivenessCheck(): Promise<any> {
+    return this.request<any>('/devices/liveness-check', {
+      method: 'POST',
+    });
   }
 }
 

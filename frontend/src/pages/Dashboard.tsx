@@ -23,6 +23,7 @@ import {
   FlowDiagnosticsResponse,
   ElectricalMetricsResponse,
   StationSettingsResponse,
+  MotorTimerStatus,
 } from '../types';
 import { api } from '../services/api';
 import { ws } from '../services/ws';
@@ -37,10 +38,16 @@ import { SafetyAlertBanner, SafetyAlert } from '../components/SafetyAlertBanner'
 import { StationSettingsModal } from '../components/StationSettingsModal';
 import { ScheduleManagerModal } from '../components/ScheduleManagerModal';
 import { EventHistoryModal } from '../components/EventHistoryModal';
+import { FleetSummaryModal } from '../components/FleetSummaryModal';
+import { audioAlert } from '../utils/audioAlert';
+import { NotificationPreferencesModal } from '../components/NotificationPreferencesModal';
+import { DeviceCommissioningModal } from '../components/DeviceCommissioningModal';
+import { AuditLogsModal } from '../components/AuditLogsModal';
 import { Spinner } from '../components/common/Spinner';
 import { TelemetryFreshnessBadge } from '../components/common/TelemetryFreshnessBadge';
 import { ControllerOfflineOverlay } from '../components/common/ControllerOfflineOverlay';
 import { ErrorBoundary } from '../components/common/ErrorBoundary';
+import { Bell, ShieldCheck } from 'lucide-react';
 
 interface DashboardProps {
   latestWsEvent?: WsServerEvent | null;
@@ -66,12 +73,40 @@ export const Dashboard: React.FC<DashboardProps> = ({ latestWsEvent }) => {
   const [waterQuality, setWaterQuality] = useState<WaterQualityResponse | null>(null);
   const [flowDiagnostics, setFlowDiagnostics] = useState<Record<string, FlowDiagnosticsResponse>>({});
   const [electricalMetrics, setElectricalMetrics] = useState<Record<string, ElectricalMetricsResponse>>({});
+  const [motorTimers, setMotorTimers] = useState<Record<string, MotorTimerStatus>>({});
+  const [timerRemainingSeconds, setTimerRemainingSeconds] = useState<Record<string, number>>({});
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState<boolean>(false);
+
+  // Synchronized countdown ticker
+  useEffect(() => {
+    const updateTicker = () => {
+      const now = Date.now();
+      const updated: Record<string, number> = {};
+      for (const [mId, t] of Object.entries(motorTimers)) {
+        if (t && t.end_time) {
+          const target = new Date(t.end_time).getTime();
+          updated[mId] = Math.max(0, Math.floor((target - now) / 1000));
+        } else {
+          updated[mId] = 0;
+        }
+      }
+      setTimerRemainingSeconds(updated);
+    };
+    updateTicker();
+    const interval = setInterval(updateTicker, 1000);
+    return () => clearInterval(interval);
+  }, [motorTimers]);
 
   // Phase 17 & Phase 20 State
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState<boolean>(false);
   const [isEventHistoryModalOpen, setIsEventHistoryModalOpen] = useState<boolean>(false);
   const [selectedHistoryMotor, setSelectedHistoryMotor] = useState<Motor | null>(null);
+
+  // Enterprise & Hardware Modals State
+  const [isFleetModalOpen, setIsFleetModalOpen] = useState<boolean>(false);
+  const [isNotificationModalOpen, setIsNotificationModalOpen] = useState<boolean>(false);
+  const [isCommissionModalOpen, setIsCommissionModalOpen] = useState<boolean>(false);
+  const [isAuditModalOpen, setIsAuditModalOpen] = useState<boolean>(false);
 
   // Live Telemetry state for primary summary gauge
   const [telemetry, setTelemetry] = useState<{
@@ -264,6 +299,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ latestWsEvent }) => {
               [m.id]: elecMetrics.value,
             }));
           }
+
+          // Fetch active schedule timer status if motor is ON
+          if (m.status === 'ON') {
+            api.getMotorTimer(m.id).then((timer) => {
+              if (timer && timer.is_running) {
+                setMotorTimers((prev) => ({ ...prev, [m.id]: timer }));
+              }
+            }).catch(() => {});
+          }
         } catch {
           // ignore
         }
@@ -335,6 +379,19 @@ export const Dashboard: React.FC<DashboardProps> = ({ latestWsEvent }) => {
       setElectricalMetrics((prev) =>
         prev[motor_id] ? { ...prev, [motor_id]: { ...prev[motor_id], motor_status: status } } : prev
       );
+      if (status === 'ON') {
+        api.getMotorTimer(motor_id).then((timer) => {
+          if (timer && timer.is_running) {
+            setMotorTimers((prev) => ({ ...prev, [motor_id]: timer }));
+          }
+        }).catch(() => {});
+      } else {
+        setMotorTimers((prev) => {
+          const next = { ...prev };
+          delete next[motor_id];
+          return next;
+        });
+      }
     } else if (latestWsEvent.event === 'COMMAND_LIFECYCLE') {
       const { command_id, motor_id, command_type, status, error_message, timestamp } = latestWsEvent;
       setActiveCommands((prev) => ({
@@ -348,7 +405,32 @@ export const Dashboard: React.FC<DashboardProps> = ({ latestWsEvent }) => {
           requested_at: timestamp,
         },
       }));
+    } else if (latestWsEvent.event === 'NOTIFICATION_RECEIVED') {
+      audioAlert.playBuzzer(latestWsEvent.notification_id, latestWsEvent.severity);
+      const newAlert: SafetyAlert = {
+        id: latestWsEvent.notification_id || `${latestWsEvent.timestamp}-${Math.random()}`,
+        eventType: latestWsEvent.event_type || 'NOTIFICATION',
+        motorCode: latestWsEvent.motor_id ? 'MOTOR' : 'STATION',
+        deviceUid: '',
+        stationId: latestWsEvent.station_id || selectedStationId,
+        description: `${latestWsEvent.title}: ${latestWsEvent.message}`,
+        timestamp: latestWsEvent.timestamp,
+      };
+      setSafetyAlerts((prev) => [newAlert, ...prev.slice(0, 5)]);
+
+      if (latestWsEvent.motor_id && (latestWsEvent.event_type?.includes('TIMER') || latestWsEvent.event_type?.includes('SCHEDULE'))) {
+        api.getMotorTimer(latestWsEvent.motor_id).then((t) => {
+          if (t && t.is_running) {
+            setMotorTimers((prev) => ({ ...prev, [latestWsEvent.motor_id!]: t }));
+          }
+        }).catch(() => {});
+      }
+
+      if (selectedStationId && (latestWsEvent.event_type?.includes('SCHEDULE') || latestWsEvent.event_type?.includes('TIMER'))) {
+        loadHierarchyDetails();
+      }
     } else if (latestWsEvent.event === 'SAFETY_ALERT') {
+      audioAlert.playBuzzer(latestWsEvent.timestamp, 'CRITICAL');
       const newAlert: SafetyAlert = {
         id: `${latestWsEvent.timestamp}-${Math.random()}`,
         eventType: latestWsEvent.event_type,
@@ -395,7 +477,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ latestWsEvent }) => {
         }
       }
     }
-  }, [latestWsEvent, selectedStationId]);
+  }, [latestWsEvent, selectedStationId, loadHierarchyDetails]);
 
   // Motor Control Handlers
   const handleStartMotor = async (motorId: string) => {
@@ -556,8 +638,47 @@ export const Dashboard: React.FC<DashboardProps> = ({ latestWsEvent }) => {
                 <Sliders className="w-3.5 h-3.5" />
                 <span>Rules & Settings</span>
               </button>
+
+              <button
+                onClick={() => setIsCommissionModalOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-400 text-xs font-bold border border-slate-700 transition-colors"
+                title="Commission & Pair IoT Device"
+              >
+                <Cpu className="w-3.5 h-3.5" />
+                <span>Pair Device</span>
+              </button>
             </>
           )}
+
+          {/* Enterprise Global Modals */}
+          {activeSite && (
+            <button
+              onClick={() => setIsFleetModalOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-teal-950/60 hover:bg-teal-900/80 text-teal-300 text-xs font-bold border border-teal-800/80 transition-colors"
+              title="Enterprise Multi-Site Fleet Summary"
+            >
+              <Layers className="w-3.5 h-3.5" />
+              <span>Fleet</span>
+            </button>
+          )}
+
+          <button
+            onClick={() => setIsAuditModalOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold border border-slate-700 transition-colors"
+            title="Compliance Audit Logs"
+          >
+            <ShieldCheck className="w-3.5 h-3.5 text-indigo-400" />
+            <span>Audit</span>
+          </button>
+
+          <button
+            onClick={() => setIsNotificationModalOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold border border-slate-700 transition-colors"
+            title="Notification Channel Preferences"
+          >
+            <Bell className="w-3.5 h-3.5 text-amber-400" />
+            <span>Alerts</span>
+          </button>
 
           <button
             onClick={() => {
@@ -680,6 +801,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ latestWsEvent }) => {
                   <MotorCard
                     motor={motor}
                     activeCommand={activeCommands[motor.id]}
+                    timerRemainingSeconds={timerRemainingSeconds[motor.id]}
                     onStart={handleStartMotor}
                     onStop={handleStopMotor}
                     onEmergencyStop={handleEmergencyStopMotor}
@@ -791,6 +913,41 @@ export const Dashboard: React.FC<DashboardProps> = ({ latestWsEvent }) => {
           }}
         />
       )}
+
+      {/* Enterprise Fleet Operational Summary Modal (Phase 20) */}
+      {activeSite && (
+        <FleetSummaryModal
+          isOpen={isFleetModalOpen}
+          onClose={() => setIsFleetModalOpen(false)}
+          organizationId={activeSite.organization_id}
+          organizationName={activeSite.name}
+        />
+      )}
+
+      {/* Notification Preferences Modal (Phase 17) */}
+      <NotificationPreferencesModal
+        isOpen={isNotificationModalOpen}
+        onClose={() => setIsNotificationModalOpen(false)}
+      />
+
+      {/* IoT Device Commissioning Wizard */}
+      {activeStation && (
+        <DeviceCommissioningModal
+          isOpen={isCommissionModalOpen}
+          onClose={() => setIsCommissionModalOpen(false)}
+          station={activeStation}
+          onDeviceCommissioned={() => {
+            loadHierarchyDetails();
+          }}
+        />
+      )}
+
+      {/* Compliance Audit Logs Modal (Phase 19) */}
+      <AuditLogsModal
+        isOpen={isAuditModalOpen}
+        onClose={() => setIsAuditModalOpen(false)}
+        organizationId={activeSite?.organization_id || null}
+      />
     </div>
   );
 };
