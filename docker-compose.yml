@@ -1,4 +1,24 @@
 services:
+  # =========================================================================
+  # 1. MQTT Message Broker (Eclipse Mosquitto)
+  # =========================================================================
+  mqtt_broker:
+    image: eclipse-mosquitto:2.0
+    container_name: hydracontrol_mqtt
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - ./infra/mqtt/mosquitto.conf:/mosquitto/config/mosquitto.conf
+      - mosquitto_data:/mosquitto/data
+      - mosquitto_log:/mosquitto/log
+    networks:
+      - hydranet
+
+  # =========================================================================
+  # 2. Production PostgreSQL Database (Optional / Swappable with SQLite)
+  # =========================================================================
   postgres:
     image: postgres:16-alpine
     container_name: hydracontrol_postgres
@@ -16,19 +36,12 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    networks:
+      - hydranet
 
-  mqtt_broker:
-    image: eclipse-mosquitto:2.0
-    container_name: hydracontrol_mqtt
-    restart: unless-stopped
-    ports:
-      - "1883:1883"
-      - "9001:9001"
-    volumes:
-      - ./infra/mqtt/mosquitto.conf:/mosquitto/config/mosquitto.conf
-      - mosquitto_data:/mosquitto/data
-      - mosquitto_log:/mosquitto/log
-
+  # =========================================================================
+  # 3. HydraControl FastAPI Backend & Background Scheduler
+  # =========================================================================
   backend:
     build:
       context: ./backend
@@ -41,16 +54,23 @@ services:
       mqtt_broker:
         condition: service_started
     environment:
-      - ENVIRONMENT=development
+      - ENVIRONMENT=production
+      - SECRET_KEY=${SECRET_KEY:-hydracontrol_production_jwt_secret_key_9921_replace_me}
       - DATABASE_URL=postgresql+asyncpg://postgres:postgrespassword@postgres:5432/hydracontrol
       - SYNC_DATABASE_URL=postgresql://postgres:postgrespassword@postgres:5432/hydracontrol
       - MQTT_BROKER_HOST=mqtt_broker
       - MQTT_BROKER_PORT=1883
+      - CORS_ORIGINS=["http://localhost", "http://localhost:80", "http://127.0.0.1", "http://localhost:5173"]
     ports:
       - "8000:8000"
     volumes:
-      - ./backend:/app
+      - backend_data:/app/data
+    networks:
+      - hydranet
 
+  # =========================================================================
+  # 4. HydraControl React Frontend & Nginx Gateway
+  # =========================================================================
   frontend:
     build:
       context: ./frontend
@@ -58,14 +78,18 @@ services:
     container_name: hydracontrol_frontend
     restart: unless-stopped
     ports:
-      - "5173:5173"
+      - "80:80"
     depends_on:
       - backend
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
+    networks:
+      - hydranet
 
 volumes:
   postgres_data:
   mosquitto_data:
   mosquitto_log:
+  backend_data:
+
+networks:
+  hydranet:
+    driver: bridge
