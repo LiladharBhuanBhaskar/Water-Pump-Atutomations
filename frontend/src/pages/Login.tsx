@@ -317,9 +317,22 @@ export const Login: React.FC = () => {
                       Reset
                     </button>
                   </div>
-                  <p className="text-[10px] text-slate-400">
-                    Cloudflare Remote URL: <code className="text-cyan-400">{DEFAULT_CLOUDFLARE_URL}</code>
-                  </p>
+                  <div className="flex gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => handleSaveServerUrl(DEFAULT_CLOUDFLARE_URL)}
+                      className="px-2.5 py-1 rounded-lg bg-cyan-950/60 hover:bg-cyan-900/60 border border-cyan-700/50 text-cyan-300 text-[10px] font-medium"
+                    >
+                      🌐 Use Cloudflare (Worldwide)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSaveServerUrl('http://192.168.1.13:8000')}
+                      className="px-2.5 py-1 rounded-lg bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700 text-slate-300 text-[10px] font-medium"
+                    >
+                      📶 Use Local Wi-Fi
+                    </button>
+                  </div>
                 </div>
 
                 {serverTestStatus !== 'IDLE' && (

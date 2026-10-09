@@ -67,9 +67,9 @@ const MainLayout: React.FC = () => {
     }
   }, [isAuthenticated, token, user?.organization_id]);
 
-  if (isLoading) {
+  if (isLoading && token) {
     return (
-      <div className="min-h-screen bg-white flex items-center justify-center">
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
         <Spinner size="lg" label="Initializing HydraControl..." />
       </div>
     );

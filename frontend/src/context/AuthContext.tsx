@@ -86,22 +86,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const login = async (email: string, password: string) => {
-    setIsLoading(true);
-    try {
-      const authResp = await api.login(email, password);
-      localStorage.setItem('hydra_token', authResp.access_token);
-      setToken(authResp.access_token);
+    const authResp = await api.login(email, password);
+    localStorage.setItem('hydra_token', authResp.access_token);
+    setToken(authResp.access_token);
 
-      if (authResp.user) {
-        setUser(authResp.user);
-        localStorage.setItem('hydra_cached_user', JSON.stringify(authResp.user));
-      } else {
-        const userData = await api.getMe();
-        setUser(userData);
-        localStorage.setItem('hydra_cached_user', JSON.stringify(userData));
-      }
-    } finally {
-      setIsLoading(false);
+    if (authResp.user) {
+      setUser(authResp.user);
+      localStorage.setItem('hydra_cached_user', JSON.stringify(authResp.user));
+    } else {
+      const userData = await api.getMe();
+      setUser(userData);
+      localStorage.setItem('hydra_cached_user', JSON.stringify(userData));
     }
   };
 

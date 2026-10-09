@@ -3,8 +3,9 @@
   "appName": "HydraControl",
   "webDir": "dist",
   "server": {
-    "androidScheme": "https",
-    "cleartext": true
+    "androidScheme": "http",
+    "cleartext": true,
+    "allowNavigation": ["*"]
   },
   "android": {
     "allowMixedContent": true,
