@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { Button } from '../components/common/Button';
-import { isNativeCapacitorApp } from '../services/api';
+import { isNativeCapacitorApp, DEFAULT_CLOUDFLARE_URL } from '../services/api';
 
 export const Login: React.FC = () => {
   const { login } = useAuth();
@@ -26,15 +26,14 @@ export const Login: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [selectedRole, setSelectedRole] = useState<'ADMIN' | 'USER' | null>(null);
 
-  // Server Connection Configuration (for Android APK / LAN / Cloud)
+  // Cloudflare Remote Tunnel & Server Connection (Unified for APK & Web)
   const isMobile = isNativeCapacitorApp();
   const [serverUrl, setServerUrl] = useState<string>(() => {
-    if (isMobile) {
-      return localStorage.getItem('hydra_mobile_server_url') || 'http://192.168.1.13:8000';
-    }
-    // On laptop web browser: clean any stale legacy key
-    localStorage.removeItem('hydra_server_url');
-    return localStorage.getItem('hydra_web_custom_server') || '';
+    return (
+      localStorage.getItem('hydra_server_url') ||
+      localStorage.getItem('hydra_mobile_server_url') ||
+      (isMobile ? DEFAULT_CLOUDFLARE_URL : '')
+    );
   });
   const [showServerConfig, setShowServerConfig] = useState<boolean>(false);
   const [isTestingServer, setIsTestingServer] = useState<boolean>(false);
@@ -43,19 +42,21 @@ export const Login: React.FC = () => {
 
   const handleSaveServerUrl = (url: string) => {
     setServerUrl(url);
-    const storageKey = isMobile ? 'hydra_mobile_server_url' : 'hydra_web_custom_server';
     if (url.trim()) {
-      localStorage.setItem(storageKey, url.trim().replace(/\/+$/, ''));
+      const clean = url.trim().replace(/\/+$/, '');
+      localStorage.setItem('hydra_server_url', clean);
+      localStorage.setItem('hydra_mobile_server_url', clean);
     } else {
-      localStorage.removeItem(storageKey);
+      localStorage.removeItem('hydra_server_url');
+      localStorage.removeItem('hydra_mobile_server_url');
     }
   };
 
   const handleResetServerUrl = () => {
-    const storageKey = isMobile ? 'hydra_mobile_server_url' : 'hydra_web_custom_server';
-    localStorage.removeItem(storageKey);
     localStorage.removeItem('hydra_server_url');
-    setServerUrl(isMobile ? 'http://192.168.1.13:8000' : '');
+    localStorage.removeItem('hydra_mobile_server_url');
+    localStorage.removeItem('hydra_web_custom_server');
+    setServerUrl(isMobile ? DEFAULT_CLOUDFLARE_URL : '');
     setServerTestStatus('IDLE');
     setServerTestMessage(null);
   };
@@ -98,12 +99,14 @@ export const Login: React.FC = () => {
       return;
     }
 
-    const storageKey = isMobile ? 'hydra_mobile_server_url' : 'hydra_web_custom_server';
     if (serverUrl.trim()) {
-      localStorage.setItem(storageKey, serverUrl.trim().replace(/\/+$/, ''));
+      const clean = serverUrl.trim().replace(/\/+$/, '');
+      localStorage.setItem('hydra_server_url', clean);
+      localStorage.setItem('hydra_mobile_server_url', clean);
     } else {
-      localStorage.removeItem(storageKey);
       localStorage.removeItem('hydra_server_url');
+      localStorage.removeItem('hydra_mobile_server_url');
+      localStorage.removeItem('hydra_web_custom_server');
     }
 
     setError(null);
@@ -289,7 +292,7 @@ export const Login: React.FC = () => {
                       type="text"
                       value={serverUrl}
                       onChange={(e) => handleSaveServerUrl(e.target.value)}
-                      placeholder={isMobile ? "http://192.168.1.13:8000" : "Auto / Localhost (leave empty)"}
+                      placeholder={DEFAULT_CLOUDFLARE_URL}
                       className="glass-input flex-1 px-3 py-2 rounded-xl text-xs font-mono"
                     />
                     <button
@@ -309,15 +312,13 @@ export const Login: React.FC = () => {
                       type="button"
                       onClick={handleResetServerUrl}
                       className="px-2.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium border border-slate-700 transition-all"
-                      title="Reset to default"
+                      title="Reset to default Cloudflare tunnel"
                     >
                       Reset
                     </button>
                   </div>
-                  <p className="text-[10px] text-slate-500">
-                    {isMobile
-                      ? 'Mobile Wi-Fi Server IP: http://192.168.1.13:8000'
-                      : 'Laptop Web Mode: Uses internal proxy automatically (leave empty or click Reset).'}
+                  <p className="text-[10px] text-slate-400">
+                    Cloudflare Remote URL: <code className="text-cyan-400">{DEFAULT_CLOUDFLARE_URL}</code>
                   </p>
                 </div>
 

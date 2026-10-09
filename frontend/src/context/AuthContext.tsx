@@ -24,9 +24,21 @@ const OPERATOR_ROLES: UserRole[] = [
 ];
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(() => localStorage.getItem('hydra_token'));
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [user, setUser] = useState<User | null>(() => {
+    try {
+      const cached = localStorage.getItem('hydra_cached_user');
+      return cached ? JSON.parse(cached) : null;
+    } catch {
+      return null;
+    }
+  });
+  // Instant render: If user is already cached or no token exists, do not block with full-screen spinner
+  const [isLoading, setIsLoading] = useState<boolean>(() => {
+    const storedToken = localStorage.getItem('hydra_token');
+    const cached = localStorage.getItem('hydra_cached_user');
+    return !!storedToken && !cached;
+  });
 
   const logout = () => {
     localStorage.removeItem('hydra_token');

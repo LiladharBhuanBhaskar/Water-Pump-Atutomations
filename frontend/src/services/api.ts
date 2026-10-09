@@ -36,6 +36,8 @@ import {
   MotorTimerStatus,
 } from '../types';
 
+export const DEFAULT_CLOUDFLARE_URL = 'https://bought-investigator-sterling-offset.trycloudflare.com';
+
 export function isNativeCapacitorApp(): boolean {
   if (typeof window === 'undefined') return false;
 
@@ -64,22 +66,18 @@ export function isNativeCapacitorApp(): boolean {
 }
 
 export function getServerBaseUrl(): string {
-  // Check if a server URL is stored in localStorage
-  const savedUrl = localStorage.getItem('hydra_mobile_server_url') || localStorage.getItem('hydra_server_url');
+  // Check if custom server URL is saved
+  const savedUrl = localStorage.getItem('hydra_server_url') || localStorage.getItem('hydra_mobile_server_url') || localStorage.getItem('hydra_web_custom_server');
   if (savedUrl && savedUrl.trim()) {
     return savedUrl.trim().replace(/\/+$/, '');
   }
 
-  // If running inside native Android / Capacitor container, default to laptop Wi-Fi LAN IP
+  // If running inside native Android / Capacitor container, default to Cloudflare remote URL
   if (isNativeCapacitorApp()) {
-    return 'http://192.168.1.13:8000';
+    return DEFAULT_CLOUDFLARE_URL;
   }
 
-  // On standard Web browser (laptop localhost), check custom server or fallback to empty string (relative proxy /api/v1)
-  const webCustomServer = localStorage.getItem('hydra_web_custom_server');
-  if (webCustomServer && webCustomServer.trim()) {
-    return webCustomServer.trim().replace(/\/+$/, '');
-  }
+  // On standard Web browser on localhost, use relative proxy /api/v1 (or Cloudflare)
   return '';
 }
 
