@@ -36,19 +36,30 @@ import {
   MotorTimerStatus,
 } from '../types';
 
+export function isNativeCapacitorApp(): boolean {
+  if (typeof window === 'undefined') return false;
+  return (
+    window.location.protocol === 'capacitor:' ||
+    window.location.protocol === 'file:' ||
+    !!(window as any).Capacitor?.isNativePlatform?.()
+  );
+}
+
 export function getServerBaseUrl(): string {
-  const savedUrl = localStorage.getItem('hydra_server_url');
-  if (savedUrl && savedUrl.trim()) {
-    return savedUrl.trim().replace(/\/+$/, '');
-  }
-  // Detect if running inside native Android / Capacitor container
-  const isCapacitor =
-    typeof window !== 'undefined' &&
-    (window.location.protocol === 'capacitor:' ||
-      window.location.protocol === 'file:' ||
-      (window.location.hostname === 'localhost' && window.location.port === ''));
-  if (isCapacitor) {
+  // If running inside native Android / Capacitor container, default to Wi-Fi LAN IP
+  if (isNativeCapacitorApp()) {
+    const savedUrl = localStorage.getItem('hydra_mobile_server_url') || localStorage.getItem('hydra_server_url');
+    if (savedUrl && savedUrl.trim()) {
+      return savedUrl.trim().replace(/\/+$/, '');
+    }
     return 'http://192.168.1.13:8000';
+  }
+
+  // On standard Web browser (laptop localhost), ALWAYS use relative proxy /api/v1
+  // Check if developer explicitly configured a custom remote cloud host
+  const webCustomServer = localStorage.getItem('hydra_web_custom_server');
+  if (webCustomServer && webCustomServer.trim()) {
+    return webCustomServer.trim().replace(/\/+$/, '');
   }
   return '';
 }

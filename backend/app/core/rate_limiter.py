@@ -51,8 +51,16 @@ rate_limiter = RateLimiter()
 def rate_limit(max_requests: int, window_seconds: int, key_prefix: str = "global"):
     """
     FastAPI dependency factory for endpoint-level rate limiting.
+    Bypassed in development mode for smooth testing.
     """
     async def dependency(request: Request):
+        try:
+            from app.core.config import settings
+            if settings.ENVIRONMENT == "development" or settings.DEBUG:
+                return
+        except Exception:
+            pass
+
         # Derive identity key from client host / X-Forwarded-For
         client_ip = request.client.host if request.client else "127.0.0.1"
         forwarded = request.headers.get("X-Forwarded-For")

@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { Button } from '../components/common/Button';
-import { getServerBaseUrl } from '../services/api';
+import { isNativeCapacitorApp } from '../services/api';
 
 export const Login: React.FC = () => {
   const { login } = useAuth();
@@ -27,8 +27,14 @@ export const Login: React.FC = () => {
   const [selectedRole, setSelectedRole] = useState<'ADMIN' | 'USER' | null>(null);
 
   // Server Connection Configuration (for Android APK / LAN / Cloud)
+  const isMobile = isNativeCapacitorApp();
   const [serverUrl, setServerUrl] = useState<string>(() => {
-    return getServerBaseUrl() || 'http://192.168.1.13:8000';
+    if (isMobile) {
+      return localStorage.getItem('hydra_mobile_server_url') || 'http://192.168.1.13:8000';
+    }
+    // On laptop web browser: clean any stale legacy key
+    localStorage.removeItem('hydra_server_url');
+    return localStorage.getItem('hydra_web_custom_server') || '';
   });
   const [showServerConfig, setShowServerConfig] = useState<boolean>(false);
   const [isTestingServer, setIsTestingServer] = useState<boolean>(false);
@@ -37,11 +43,21 @@ export const Login: React.FC = () => {
 
   const handleSaveServerUrl = (url: string) => {
     setServerUrl(url);
+    const storageKey = isMobile ? 'hydra_mobile_server_url' : 'hydra_web_custom_server';
     if (url.trim()) {
-      localStorage.setItem('hydra_server_url', url.trim().replace(/\/+$/, ''));
+      localStorage.setItem(storageKey, url.trim().replace(/\/+$/, ''));
     } else {
-      localStorage.removeItem('hydra_server_url');
+      localStorage.removeItem(storageKey);
     }
+  };
+
+  const handleResetServerUrl = () => {
+    const storageKey = isMobile ? 'hydra_mobile_server_url' : 'hydra_web_custom_server';
+    localStorage.removeItem(storageKey);
+    localStorage.removeItem('hydra_server_url');
+    setServerUrl(isMobile ? 'http://192.168.1.13:8000' : '');
+    setServerTestStatus('IDLE');
+    setServerTestMessage(null);
   };
 
   const handleTestConnection = async () => {
@@ -49,21 +65,27 @@ export const Login: React.FC = () => {
     setServerTestStatus('IDLE');
     setServerTestMessage(null);
     const target = serverUrl.trim().replace(/\/+$/, '');
+    const pingEndpoint = target ? `${target}/health/live` : '/health/live';
     try {
       const startTime = Date.now();
-      const res = await fetch(`${target}/health/live`, { method: 'GET' });
+      const res = await fetch(pingEndpoint, { method: 'GET' });
       const latency = Date.now() - startTime;
       if (res.ok) {
         setServerTestStatus('SUCCESS');
         setServerTestMessage(`✓ Connected successfully! (${latency}ms)`);
-        localStorage.setItem('hydra_server_url', target);
+        const storageKey = isMobile ? 'hydra_mobile_server_url' : 'hydra_web_custom_server';
+        if (target) {
+          localStorage.setItem(storageKey, target);
+        } else {
+          localStorage.removeItem(storageKey);
+        }
       } else {
         setServerTestStatus('FAILED');
         setServerTestMessage(`HTTP ${res.status}: Server returned error.`);
       }
     } catch (err: any) {
       setServerTestStatus('FAILED');
-      setServerTestMessage(`Cannot connect to ${target}. Ensure laptop & phone are on the same Wi-Fi.`);
+      setServerTestMessage(`Cannot connect to server. Check server status or Wi-Fi.`);
     } finally {
       setIsTestingServer(false);
     }
@@ -76,8 +98,12 @@ export const Login: React.FC = () => {
       return;
     }
 
+    const storageKey = isMobile ? 'hydra_mobile_server_url' : 'hydra_web_custom_server';
     if (serverUrl.trim()) {
-      localStorage.setItem('hydra_server_url', serverUrl.trim().replace(/\/+$/, ''));
+      localStorage.setItem(storageKey, serverUrl.trim().replace(/\/+$/, ''));
+    } else {
+      localStorage.removeItem(storageKey);
+      localStorage.removeItem('hydra_server_url');
     }
 
     setError(null);
@@ -263,13 +289,13 @@ export const Login: React.FC = () => {
                       type="text"
                       value={serverUrl}
                       onChange={(e) => handleSaveServerUrl(e.target.value)}
-                      placeholder="http://192.168.1.13:8000"
+                      placeholder={isMobile ? "http://192.168.1.13:8000" : "Auto / Localhost (leave empty)"}
                       className="glass-input flex-1 px-3 py-2 rounded-xl text-xs font-mono"
                     />
                     <button
                       type="button"
                       onClick={handleTestConnection}
-                      disabled={isTestingServer || !serverUrl}
+                      disabled={isTestingServer}
                       className="px-3 py-2 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 text-xs font-semibold border border-cyan-500/30 flex items-center gap-1.5 disabled:opacity-50 transition-all"
                     >
                       {isTestingServer ? (
@@ -279,9 +305,19 @@ export const Login: React.FC = () => {
                       )}
                       Test
                     </button>
+                    <button
+                      type="button"
+                      onClick={handleResetServerUrl}
+                      className="px-2.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium border border-slate-700 transition-all"
+                      title="Reset to default"
+                    >
+                      Reset
+                    </button>
                   </div>
                   <p className="text-[10px] text-slate-500">
-                    Default Wi-Fi IP: <code className="text-cyan-400">http://192.168.1.13:8000</code>
+                    {isMobile
+                      ? 'Mobile Wi-Fi Server IP: http://192.168.1.13:8000'
+                      : 'Laptop Web Mode: Uses internal proxy automatically (leave empty or click Reset).'}
                   </p>
                 </div>
 
