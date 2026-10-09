@@ -90,6 +90,17 @@ scratch_*.py
 .tempmediaStorage/
 
 # ------------------------------------------
+# Android & Gradle Build Files
+# ------------------------------------------
+.gradle/
+**/build/
+frontend/android/.gradle/
+frontend/android/build/
+frontend/android/app/build/
+frontend/android/local.properties
+*.apk.idsig
+
+# ------------------------------------------
 # IDE & Operating System Files
 # ------------------------------------------
 .vscode/
