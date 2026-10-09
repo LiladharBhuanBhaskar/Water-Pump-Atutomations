@@ -703,3 +703,51 @@ export interface MotorTimerStatus {
   schedule_name?: string | null;
   source?: 'SCHEDULED' | 'MANUAL';
 }
+
+export interface UserAdminCreate {
+  name: string;
+  email: string;
+  password: string;
+  role: UserRole;
+  organization_id?: string;
+}
+
+export interface UserAdminUpdate {
+  name?: string;
+  role?: UserRole;
+  is_active?: boolean;
+}
+
+export interface SubscriptionPlanInfo {
+  tier: string;
+  name: string;
+  price_monthly: number;
+  price_annual: number;
+  max_motors: number;
+  max_stations: number;
+  max_users: number;
+  features: string[];
+}
+
+export interface SubscriptionResponse {
+  organization_id: string;
+  organization_name: string;
+  organization_code: string;
+  tier: string;
+  status: string;
+  max_motors: number;
+  current_motors: number;
+  max_stations: number;
+  current_stations: number;
+  max_users: number;
+  current_users: number;
+  billing_cycle: string;
+  renewal_date: string;
+  features: string[];
+}
+
+export interface SubscriptionUpdateRequest {
+  tier: string;
+  billing_cycle?: string;
+}
+

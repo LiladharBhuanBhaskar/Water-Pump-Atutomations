@@ -407,7 +407,48 @@ class ApiService {
       method: 'POST',
     });
   }
+
+  // Admin User & Subscription Management
+  async getUsers(): Promise<User[]> {
+    return this.request<User[]>('/users');
+  }
+
+  async createUser(data: any): Promise<User> {
+    return this.request<User>('/users', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateUser(userId: string, data: any): Promise<User> {
+    return this.request<User>(`/users/${userId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteUser(userId: string): Promise<void> {
+    return this.request<void>(`/users/${userId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async getSubscriptionPlans(): Promise<any[]> {
+    return this.request<any[]>('/users/subscriptions/plans');
+  }
+
+  async getCurrentSubscription(): Promise<any> {
+    return this.request<any>('/users/subscriptions/current');
+  }
+
+  async updateSubscriptionPlan(data: any): Promise<any> {
+    return this.request<any>('/users/subscriptions/current', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
 }
 
 export const api = new ApiService();
+
 

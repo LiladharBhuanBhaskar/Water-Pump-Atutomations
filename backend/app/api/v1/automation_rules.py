@@ -50,7 +50,7 @@ async def list_automation_rules_endpoint(
 @router.post("", response_model=AutomationRuleResponse, status_code=status.HTTP_201_CREATED)
 async def create_automation_rule_endpoint(
     req: AutomationRuleCreate,
-    current_user: User = Depends(require_roles([UserRole.SUPER_ADMIN, UserRole.ORGANIZATION_ADMIN, UserRole.SITE_MANAGER])),
+    current_user: User = Depends(require_roles([UserRole.SUPER_ADMIN, UserRole.ORGANIZATION_ADMIN, UserRole.SITE_MANAGER, UserRole.STATION_OPERATOR, UserRole.OWNER])),
     session: AsyncSession = Depends(get_db),
 ):
     """Create an automation rule for a station."""
@@ -70,7 +70,7 @@ async def create_automation_rule_endpoint(
 async def update_automation_rule_endpoint(
     rule_id: uuid.UUID,
     req: AutomationRuleUpdate,
-    current_user: User = Depends(require_roles([UserRole.SUPER_ADMIN, UserRole.ORGANIZATION_ADMIN, UserRole.SITE_MANAGER])),
+    current_user: User = Depends(require_roles([UserRole.SUPER_ADMIN, UserRole.ORGANIZATION_ADMIN, UserRole.SITE_MANAGER, UserRole.STATION_OPERATOR, UserRole.OWNER])),
     session: AsyncSession = Depends(get_db),
 ):
     """Update an automation rule."""
@@ -96,7 +96,7 @@ async def update_automation_rule_endpoint(
 @router.delete("/{rule_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_automation_rule_endpoint(
     rule_id: uuid.UUID,
-    current_user: User = Depends(require_roles([UserRole.SUPER_ADMIN, UserRole.ORGANIZATION_ADMIN, UserRole.SITE_MANAGER])),
+    current_user: User = Depends(require_roles([UserRole.SUPER_ADMIN, UserRole.ORGANIZATION_ADMIN, UserRole.SITE_MANAGER, UserRole.STATION_OPERATOR, UserRole.OWNER])),
     session: AsyncSession = Depends(get_db),
 ):
     """Delete an automation rule."""

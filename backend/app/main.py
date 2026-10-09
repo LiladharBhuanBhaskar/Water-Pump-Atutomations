@@ -30,11 +30,13 @@ try:
     from app.api.v1.audit_logs import router as audit_logs_router
     from app.api.v1.notifications import router as notifications_router
     from app.api.v1.fleet import router as fleet_router
+    from app.api.v1.users import router as users_router
     from app.api.v1.websocket import router as ws_router
 except ImportError:
     from backend.app.core.config import settings
     from backend.app.api.v1.health import router as health_router
     from backend.app.api.v1.auth import router as auth_router
+    from backend.app.api.v1.users import router as users_router
     from backend.app.api.v1.organizations import router as organizations_router
     from backend.app.api.v1.sites import router as sites_router
     from backend.app.api.v1.stations import router as stations_router
@@ -203,6 +205,7 @@ app.include_router(audit_logs_router, prefix=settings.API_V1_STR)
 app.include_router(notifications_router, prefix=settings.API_V1_STR)
 app.include_router(fleet_router, prefix=settings.API_V1_STR)
 app.include_router(devices_router, prefix=f"{settings.API_V1_STR}/devices")
+app.include_router(users_router, prefix=f"{settings.API_V1_STR}/users")
 app.include_router(ws_router, prefix=settings.API_V1_STR)
 
 

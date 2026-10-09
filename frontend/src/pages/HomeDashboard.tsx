@@ -20,6 +20,12 @@ import {
   Square,
   Sliders,
   History,
+  Play,
+  Pause,
+  Trash2,
+  Save,
+  SlidersHorizontal,
+  Crown,
 } from 'lucide-react';
 import {
   Site,
@@ -39,6 +45,7 @@ import { ScheduleManagerModal } from '../components/ScheduleManagerModal';
 import { NotificationPreferencesModal } from '../components/NotificationPreferencesModal';
 import { DeviceCommissioningModal } from '../components/DeviceCommissioningModal';
 import { StartMotorModal } from '../components/StartMotorModal';
+import { UserSubscriptionAdminModal } from '../components/UserSubscriptionAdminModal';
 import { audioAlert } from '../utils/audioAlert';
 
 interface PumpRunSession {
@@ -126,6 +133,18 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Station Operational Settings & Thresholds (Full Operator Control)
+  const [tankStopThreshold, setTankStopThreshold] = useState<number>(95);
+  const [sumpDryRunThreshold, setSumpDryRunThreshold] = useState<number>(10);
+  const [turbidityStopThreshold, setTurbidityStopThreshold] = useState<number>(25);
+  const [autoStopTankFull, setAutoStopTankFull] = useState<boolean>(true);
+  const [offlineAlertEnabled, setOfflineAlertEnabled] = useState<boolean>(true);
+  const [isSavingSettings, setIsSavingSettings] = useState<boolean>(false);
+
+  // Business Admin Management Modal State
+  const [isAdminModalOpen, setIsAdminModalOpen] = useState<boolean>(false);
+  const [scheduleToDelete, setScheduleToDelete] = useState<ScheduleResponse | null>(null);
 
   // History Section Filters & View State
   const [historyMotorFilter, setHistoryMotorFilter] = useState<string>('ALL');
@@ -220,7 +239,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
       const targetMotorId = activeTarget?.id;
 
       // 2. Parallel fetch only dynamic runtime metrics
-      const [eventsRes, wqRes, schedRes, elecRes, flowRes, timerRes] =
+      const [eventsRes, wqRes, schedRes, elecRes, flowRes, timerRes, settingsRes] =
         await Promise.allSettled([
           curStation
             ? api.getStationEvents(curStation.id, { limit: 50 })
@@ -232,6 +251,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
           targetMotorId ? api.getElectricalMetrics(targetMotorId) : Promise.resolve(null),
           targetMotorId ? api.getFlowDiagnostics(targetMotorId) : Promise.resolve(null),
           targetMotorId ? api.getMotorTimer(targetMotorId) : Promise.resolve(null),
+          curStation ? api.getStationSettings(curStation.id) : Promise.resolve(null),
         ]);
 
       // 1. Process Event History
@@ -274,7 +294,24 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
         }
       }
 
-      // 6. Process Active Timer
+      // 6. Process Station Settings & Thresholds
+      if (settingsRes.status === 'fulfilled' && settingsRes.value) {
+        const s = settingsRes.value;
+        if (s.water_level_threshold !== undefined && s.water_level_threshold !== null) {
+          setTankStopThreshold(s.water_level_threshold);
+        }
+        if (s.turbidity_threshold !== undefined && s.turbidity_threshold !== null) {
+          setTurbidityStopThreshold(s.turbidity_threshold);
+        }
+        if (s.auto_stop_on_tank_full !== undefined) {
+          setAutoStopTankFull(s.auto_stop_on_tank_full);
+        }
+        if (s.offline_alert_enabled !== undefined) {
+          setOfflineAlertEnabled(s.offline_alert_enabled);
+        }
+      }
+
+      // 7. Process Active Timer
       if (timerRes.status === 'fulfilled' && timerRes.value) {
         const timerVal = timerRes.value;
         if (timerVal.is_running && timerVal.remaining_seconds > 0) {
@@ -911,7 +948,60 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
     }
   };
 
+  const handleSaveOperationalSettings = async () => {
+    if (!station) return;
+    setIsSavingSettings(true);
+    try {
+      await api.updateStationSettings(station.id, {
+        water_level_threshold: Number(tankStopThreshold),
+        turbidity_threshold: Number(turbidityStopThreshold),
+        auto_stop_on_tank_full: Boolean(autoStopTankFull),
+        offline_alert_enabled: Boolean(offlineAlertEnabled),
+      });
+      setToastMessage('✓ Operational Thresholds & Safety Rules Saved!');
+      setTimeout(() => setToastMessage(null), 3500);
+      debouncedSync(100);
+    } catch (err: any) {
+      setToastMessage(err.message || 'Failed to save station settings');
+      setTimeout(() => setToastMessage(null), 3500);
+    } finally {
+      setIsSavingSettings(false);
+    }
+  };
+
+  const handleToggleScheduleActive = async (s: ScheduleResponse) => {
+    if (!station) return;
+    try {
+      const updated = await api.updateSchedule(station.id, s.id, {
+        is_active: !s.is_active,
+      });
+      setSchedules((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+      setToastMessage(`Schedule "${s.name}" ${updated.is_active ? 'Activated' : 'Paused'}`);
+      setTimeout(() => setToastMessage(null), 3000);
+      debouncedSync(200);
+    } catch (err: any) {
+      setToastMessage(err.message || 'Failed to toggle schedule');
+      setTimeout(() => setToastMessage(null), 3000);
+    }
+  };
+
+  const handleDeleteScheduleDirect = async (s: ScheduleResponse) => {
+    if (!station) return;
+    try {
+      await api.deleteSchedule(station.id, s.id);
+      setSchedules((prev) => prev.filter((item) => item.id !== s.id));
+      setScheduleToDelete(null);
+      setToastMessage(`Schedule "${s.name}" Deleted`);
+      setTimeout(() => setToastMessage(null), 3000);
+      debouncedSync(200);
+    } catch (err: any) {
+      setToastMessage(err.message || 'Failed to delete schedule');
+      setTimeout(() => setToastMessage(null), 3000);
+    }
+  };
+
   const activeSchedulesCount = schedules.filter((s) => s.is_active).length;
+  const isAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'ORGANIZATION_ADMIN';
 
   return (
     <div className="w-full max-w-lg mx-auto px-3.5 pt-2 pb-24 space-y-3 font-['Plus_Jakarta_Sans',sans-serif] selection:bg-cyan-500 selection:text-white">
@@ -1433,63 +1523,84 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
       )}
 
       {/* ========================================================================= */}
-      {/* TAB 2: SCHEDULES (MATCHES SCREENSHOT 2 EXACTLY) */}
+      {/* TAB 2: SCHEDULES (FULL USER AUTOMATION & TIME-OF-DAY CONTROLS) */}
       {/* ========================================================================= */}
       {activeTab === 'SCHEDULES' && (
-        <div className="space-y-3">
+        <div className="space-y-3.5">
           {/* Header Title Bar */}
-          <div className="flex items-center gap-3 pt-1">
-            <div className="w-10 h-10 rounded-2xl bg-teal-50 text-teal-700 flex items-center justify-center shadow-xs">
-              <Calendar className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-lg font-black text-slate-900 tracking-tight">SCHEDULES</h2>
-                <span className="px-2 py-0.5 rounded-full bg-teal-100 text-teal-800 text-[10px] font-extrabold">
-                  {activeSchedulesCount} Active
-                </span>
+          <div className="flex items-center justify-between pt-1">
+            <div className="flex items-center gap-2.5">
+              <div className="w-10 h-10 rounded-2xl bg-teal-50 text-teal-700 flex items-center justify-center shadow-xs">
+                <Calendar className="w-5 h-5" />
               </div>
-              <p className="text-xs text-slate-400 font-medium">Automated Daily Timer</p>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-base font-black text-slate-900 tracking-tight">PUMP SCHEDULES</h2>
+                  <span className="px-2 py-0.5 rounded-full bg-teal-100 text-teal-800 text-[10px] font-extrabold">
+                    {activeSchedulesCount} Active
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400 font-medium">Automated Time-of-Day &amp; Days-of-Week</p>
+              </div>
             </div>
+
+            <button
+              type="button"
+              onClick={() => setIsScheduleModalOpen(true)}
+              className="px-3.5 py-2 rounded-2xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-black flex items-center gap-1.5 shadow-md shadow-teal-600/25 transition-all flex-shrink-0 cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5 stroke-[3]" />
+              <span>Add Schedule</span>
+            </button>
           </div>
 
-          {/* Daily Pump Schedules Card */}
-          <div className="mobile-card p-4 flex items-center justify-between gap-3">
+          {/* Quick Schedule Management Card */}
+          <div className="mobile-card p-3.5 flex items-center justify-between gap-3 bg-gradient-to-r from-teal-500/10 via-cyan-500/10 to-teal-500/10 border-teal-200">
             <div className="flex items-center gap-3 min-w-0">
-              <div className="w-10 h-10 rounded-2xl bg-teal-50 text-teal-700 flex items-center justify-center flex-shrink-0">
-                <Clock className="w-5 h-5" />
+              <div className="w-9 h-9 rounded-xl bg-teal-600 text-white flex items-center justify-center flex-shrink-0 shadow-xs">
+                <Clock className="w-4 h-4" />
               </div>
               <div className="min-w-0">
-                <h3 className="text-sm font-bold text-slate-900 truncate">Daily Pump Schedules</h3>
-                <p className="text-xs text-slate-400 font-medium truncate">
-                  {activeSchedulesCount} automated timer{activeSchedulesCount !== 1 ? 's' : ''} active
+                <h3 className="text-xs font-black text-slate-900 truncate">Automated Timer Routines</h3>
+                <p className="text-[11px] text-teal-800 font-medium truncate">
+                  {schedules.length} total routine{schedules.length !== 1 ? 's' : ''} configured
                 </p>
               </div>
             </div>
 
             <button
+              type="button"
               onClick={() => setIsScheduleModalOpen(true)}
-              className="px-3.5 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-md shadow-teal-600/25 transition-all flex-shrink-0"
+              className="px-3 py-1.5 rounded-xl bg-white border border-teal-300 hover:bg-teal-50 text-teal-800 text-[11px] font-bold shadow-xs transition-colors"
             >
-              <Plus className="w-3.5 h-3.5 stroke-[3]" />
-              <span>Configure</span>
+              Manage Slots
             </button>
           </div>
 
           {/* Active Schedules List */}
-          <div className="space-y-2">
-            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 px-1">
-              Configured Time Slots
-            </h4>
+          <div className="space-y-2.5">
+            <div className="flex items-center justify-between px-1">
+              <h4 className="text-xs font-black uppercase tracking-wider text-slate-400">
+                Configured Schedules ({schedules.length})
+              </h4>
+              <span className="text-[10px] text-slate-400 font-semibold">Tap to Pause or Resume</span>
+            </div>
+
             {schedules.length === 0 ? (
-              <div className="mobile-card p-6 text-center text-xs text-slate-400 space-y-2">
-                <Clock className="w-8 h-8 text-slate-300 mx-auto" />
-                <p>No automated timer schedules created yet.</p>
+              <div className="mobile-card p-8 text-center text-xs text-slate-400 space-y-3">
+                <Clock className="w-10 h-10 text-slate-300 mx-auto" />
+                <div>
+                  <p className="font-bold text-slate-700">No automated schedules created yet.</p>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    Set up a daily morning or evening routine to automatically run water pump.
+                  </p>
+                </div>
                 <button
+                  type="button"
                   onClick={() => setIsScheduleModalOpen(true)}
-                  className="px-3 py-1.5 rounded-xl bg-teal-50 text-teal-700 font-bold text-xs hover:bg-teal-100"
+                  className="px-4 py-2 rounded-2xl bg-teal-600 text-white font-bold text-xs shadow-md shadow-teal-600/20"
                 >
-                  + Add First Schedule
+                  + Create First Schedule
                 </button>
               </div>
             ) : (
@@ -1500,39 +1611,89 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                 return (
                   <div
                     key={s.id}
-                    className="mobile-card p-3.5 flex items-center justify-between"
+                    className={`mobile-card p-3.5 flex flex-col justify-between gap-3 border transition-all ${
+                      s.is_active
+                        ? 'border-teal-200/80 bg-white'
+                        : 'border-slate-200/80 bg-slate-50/70 opacity-80'
+                    }`}
                   >
-                    <div className="flex items-center gap-2.5">
-                      <span
-                        className={`w-2 h-2 rounded-full ${
-                          s.is_active ? 'bg-emerald-500' : 'bg-slate-300'
-                        }`}
-                      />
-                      <div>
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="text-xs font-bold text-slate-900">{s.name}</span>
-                          {targetMotor && (
-                            <span className="px-1.5 py-0.5 rounded bg-teal-50 text-teal-800 text-[10px] font-bold border border-teal-200/60 font-mono flex items-center gap-0.5">
-                              <Zap className="w-2.5 h-2.5 text-teal-600" />
-                              {targetMotor.motor_code}
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-[11px] text-slate-400">
-                          {s.start_time} &bull; {Math.round(s.duration_seconds / 60)} mins &bull; [
-                          {s.days_of_week.join(', ')}]
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-start gap-2.5 min-w-0">
+                        <span
+                          className={`w-2.5 h-2.5 rounded-full mt-1 shrink-0 ${
+                            s.is_active ? 'bg-emerald-500 shadow-xs' : 'bg-slate-300'
+                          }`}
+                        />
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-xs font-black text-slate-900">{s.name}</span>
+                            {targetMotor && (
+                              <span className="px-1.5 py-0.5 rounded bg-teal-50 text-teal-800 text-[10px] font-bold border border-teal-200/60 font-mono flex items-center gap-0.5">
+                                <Zap className="w-2.5 h-2.5 text-teal-600" />
+                                {targetMotor.motor_code}
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[11px] text-slate-500 font-medium mt-0.5">
+                            Starts at <span className="font-bold text-slate-800">{s.start_time}</span> &bull;{' '}
+                            Runs for <span className="font-bold text-slate-800">{Math.round(s.duration_seconds / 60)} mins</span>
+                          </div>
                         </div>
                       </div>
+
+                      {/* Day Badges */}
+                      <div className="flex items-center gap-0.5 flex-wrap justify-end">
+                        {['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'].map((d) => {
+                          const isIncluded = s.days_of_week.includes(d);
+                          return (
+                            <span
+                              key={d}
+                              className={`text-[9px] font-bold px-1 py-0.5 rounded ${
+                                isIncluded
+                                  ? 'bg-teal-100 text-teal-800'
+                                  : 'text-slate-300'
+                              }`}
+                            >
+                              {d[0]}
+                            </span>
+                          );
+                        })}
+                      </div>
                     </div>
-                    <span
-                      className={`px-2 py-0.5 rounded-lg text-[10px] font-bold ${
-                        s.is_active
-                          ? 'bg-emerald-50 text-emerald-700'
-                          : 'bg-slate-100 text-slate-500'
-                      }`}
-                    >
-                      {s.is_active ? 'Active' : 'Disabled'}
-                    </span>
+
+                    {/* Schedule Card Footer Actions */}
+                    <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs">
+                      <button
+                        type="button"
+                        onClick={() => handleToggleScheduleActive(s)}
+                        className={`px-3 py-1.5 rounded-xl font-bold flex items-center gap-1.5 transition-all text-[11px] cursor-pointer ${
+                          s.is_active
+                            ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200'
+                            : 'bg-slate-200 hover:bg-slate-300 text-slate-700'
+                        }`}
+                      >
+                        {s.is_active ? (
+                          <>
+                            <Pause className="w-3 h-3 fill-current" />
+                            <span>Active (Tap to Pause)</span>
+                          </>
+                        ) : (
+                          <>
+                            <Play className="w-3 h-3 fill-current" />
+                            <span>Paused (Tap to Resume)</span>
+                          </>
+                        )}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setScheduleToDelete(s)}
+                        title="Delete Schedule"
+                        className="p-1.5 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
                 );
               })
@@ -2027,14 +2188,288 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
       )}
 
       {/* ========================================================================= */}
-      {/* TAB 4: SETTINGS */}
+      {/* TAB 4: SETTINGS (OPERATIONAL SAFETY THRESHOLDS & ADMIN WORK) */}
       {/* ========================================================================= */}
       {activeTab === 'SETTINGS' && (
-        <div className="space-y-3">
-          <h2 className="text-lg font-black text-slate-900 tracking-tight pt-1">
-            SYSTEM SETTINGS
-          </h2>
+        <div className="space-y-4">
+          <div className="flex items-center justify-between pt-1">
+            <div>
+              <h2 className="text-base font-black text-slate-900 tracking-tight leading-tight">
+                PUMP &amp; SYSTEM SETTINGS
+              </h2>
+              <p className="text-[11px] text-slate-400 font-medium">
+                Adjust cutoffs, dry-run protection, water quality &amp; manage subscriptions
+              </p>
+            </div>
+            <button
+              onClick={() => loadData(true)}
+              disabled={isSyncing}
+              className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors shadow-xs"
+              title="Refresh Settings"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin text-teal-600' : ''}`} />
+            </button>
+          </div>
 
+          {/* 1. OPERATIONAL SAFETY THRESHOLDS CARD (FULL USER ACCESS) */}
+          <div className="mobile-card p-4 space-y-4 border-2 border-teal-500/20">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-teal-50 text-teal-700 flex items-center justify-center">
+                  <SlidersHorizontal className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-black text-slate-900 uppercase tracking-tight">
+                    Safety Cutoff Thresholds
+                  </h3>
+                  <p className="text-[10px] text-slate-400">Set automatic stop levels &amp; sensor trips</p>
+                </div>
+              </div>
+              <span className="px-2 py-0.5 rounded-lg bg-teal-100 text-teal-800 text-[10px] font-black">
+                OPERATOR CONTROL
+              </span>
+            </div>
+
+            {/* THRESHOLD 1: OVERHEAD TANK STOP LEVEL */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                  <Waves className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+                  <span>Tank Auto-Stop Level</span>
+                </label>
+                <div className="flex items-center gap-1">
+                  <span className="text-sm font-black text-teal-700 font-mono">{tankStopThreshold}%</span>
+                  <span className="text-[10px] text-slate-400 font-medium">Cutoff</span>
+                </div>
+              </div>
+              <p className="text-[10px] text-slate-500">
+                Water motor will automatically stop pumping when overhead tank reaches this level to prevent overflow.
+              </p>
+              <div className="flex items-center gap-3">
+                <input
+                  type="range"
+                  min="70"
+                  max="100"
+                  step="1"
+                  value={tankStopThreshold}
+                  onChange={(e) => setTankStopThreshold(Number(e.target.value))}
+                  className="flex-1 accent-teal-600 cursor-pointer h-2 bg-slate-100 rounded-lg"
+                />
+                <input
+                  type="number"
+                  min="70"
+                  max="100"
+                  value={tankStopThreshold}
+                  onChange={(e) => setTankStopThreshold(Math.max(70, Math.min(100, Number(e.target.value))))}
+                  className="w-14 px-2 py-1 text-xs font-black text-center font-mono rounded-lg border border-slate-200 bg-white"
+                />
+              </div>
+            </div>
+
+            {/* THRESHOLD 2: SUMP / SOURCE DRY-RUN CUTOFF */}
+            <div className="space-y-1.5 pt-2 border-t border-slate-100">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                  <Droplet className="w-3.5 h-3.5 text-cyan-600 shrink-0" />
+                  <span>Sump Dry-Run Protection Level</span>
+                </label>
+                <div className="flex items-center gap-1">
+                  <span className="text-sm font-black text-cyan-700 font-mono">{sumpDryRunThreshold}%</span>
+                  <span className="text-[10px] text-slate-400 font-medium">Min Source</span>
+                </div>
+              </div>
+              <p className="text-[10px] text-slate-500">
+                Motor shuts down immediately if underground sump or borewell drops below this mark to prevent air suction &amp; motor burn.
+              </p>
+              <div className="flex items-center gap-3">
+                <input
+                  type="range"
+                  min="5"
+                  max="40"
+                  step="1"
+                  value={sumpDryRunThreshold}
+                  onChange={(e) => setSumpDryRunThreshold(Number(e.target.value))}
+                  className="flex-1 accent-cyan-600 cursor-pointer h-2 bg-slate-100 rounded-lg"
+                />
+                <input
+                  type="number"
+                  min="5"
+                  max="40"
+                  value={sumpDryRunThreshold}
+                  onChange={(e) => setSumpDryRunThreshold(Math.max(5, Math.min(40, Number(e.target.value))))}
+                  className="w-14 px-2 py-1 text-xs font-black text-center font-mono rounded-lg border border-slate-200 bg-white"
+                />
+              </div>
+            </div>
+
+            {/* THRESHOLD 3: WATER TURBIDITY SAFETY TRIP */}
+            <div className="space-y-1.5 pt-2 border-t border-slate-100">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                  <Shield className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                  <span>Turbidity Max Safe Limit</span>
+                </label>
+                <div className="flex items-center gap-1">
+                  <span className="text-sm font-black text-amber-700 font-mono">{turbidityStopThreshold} NTU</span>
+                  <span className="text-[10px] text-slate-400 font-medium">Max Murkiness</span>
+                </div>
+              </div>
+              <p className="text-[10px] text-slate-500">
+                Automatically trips the pump if incoming muddy or turbid water exceeds this clarity limit.
+              </p>
+              <div className="flex items-center gap-3">
+                <input
+                  type="range"
+                  min="5"
+                  max="50"
+                  step="1"
+                  value={turbidityStopThreshold}
+                  onChange={(e) => setTurbidityStopThreshold(Number(e.target.value))}
+                  className="flex-1 accent-amber-500 cursor-pointer h-2 bg-slate-100 rounded-lg"
+                />
+                <input
+                  type="number"
+                  min="5"
+                  max="50"
+                  value={turbidityStopThreshold}
+                  onChange={(e) => setTurbidityStopThreshold(Math.max(5, Math.min(50, Number(e.target.value))))}
+                  className="w-14 px-2 py-1 text-xs font-black text-center font-mono rounded-lg border border-slate-200 bg-white"
+                />
+              </div>
+            </div>
+
+            {/* TOGGLES: AUTO-STOP & OFFLINE ALERTS */}
+            <div className="space-y-2 pt-2 border-t border-slate-100">
+              <label className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-200/60 cursor-pointer">
+                <div>
+                  <div className="text-xs font-bold text-slate-800">Auto-Stop on Tank Full (100% Protection)</div>
+                  <div className="text-[10px] text-slate-400">Enforce authoritative cutoff when tank is full</div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={autoStopTankFull}
+                  onChange={(e) => setAutoStopTankFull(e.target.checked)}
+                  className="w-4 h-4 accent-teal-600 rounded cursor-pointer"
+                />
+              </label>
+
+              <label className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-200/60 cursor-pointer">
+                <div>
+                  <div className="text-xs font-bold text-slate-800">Offline Gateway Timeout Alert</div>
+                  <div className="text-[10px] text-slate-400">Notify immediately if ESP32 controller disconnects</div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={offlineAlertEnabled}
+                  onChange={(e) => setOfflineAlertEnabled(e.target.checked)}
+                  className="w-4 h-4 accent-teal-600 rounded cursor-pointer"
+                />
+              </label>
+            </div>
+
+            {/* SAVE OPERATIONAL THRESHOLDS BUTTON */}
+            <button
+              type="button"
+              onClick={handleSaveOperationalSettings}
+              disabled={isSavingSettings || !isOperator}
+              className="w-full py-3 rounded-2xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-black flex items-center justify-center gap-2 shadow-md shadow-teal-600/25 transition-all cursor-pointer disabled:opacity-50"
+            >
+              {isSavingSettings ? (
+                <RefreshCw className="w-4 h-4 animate-spin" />
+              ) : (
+                <Save className="w-4 h-4" />
+              )}
+              <span>{isSavingSettings ? 'SAVING SETTINGS...' : 'SAVE OPERATIONAL THRESHOLDS'}</span>
+            </button>
+          </div>
+
+          {/* 2. AUTOMATION SHORTCUTS */}
+          <div className="space-y-2">
+            <h4 className="text-xs font-black uppercase tracking-wider text-slate-400 px-1">
+              Automation &amp; Hardware Controls
+            </h4>
+
+            <div className="mobile-card p-4 space-y-2.5">
+              <button
+                type="button"
+                onClick={() => setIsScheduleModalOpen(true)}
+                className="w-full py-2.5 px-3 rounded-xl bg-teal-50 hover:bg-teal-100 text-teal-800 text-xs font-bold flex items-center justify-between transition-colors border border-teal-200/60 cursor-pointer"
+              >
+                <div className="flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-teal-600" />
+                  <span>Manage Automation Schedules</span>
+                </div>
+                <span className="text-[10px] font-bold text-teal-700 bg-white px-2 py-0.5 rounded-md border border-teal-200">
+                  {schedules.length} Slots
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setIsNotificationModalOpen(true)}
+                className="w-full py-2.5 px-3 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 text-xs font-bold flex items-center justify-between transition-colors border border-amber-200/60 cursor-pointer"
+              >
+                <div className="flex items-center gap-2">
+                  <Bell className="w-4 h-4 text-amber-600" />
+                  <span>Notification Channels &amp; Buzzer Audio</span>
+                </div>
+                <span className="text-[10px] font-bold text-amber-700 bg-white px-2 py-0.5 rounded-md border border-amber-200">
+                  Configure
+                </span>
+              </button>
+
+              {station && (
+                <button
+                  type="button"
+                  onClick={() => setIsCommissionModalOpen(true)}
+                  className="w-full py-2.5 px-3 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-800 text-xs font-bold flex items-center justify-between transition-colors border border-slate-200/60 cursor-pointer"
+                >
+                  <div className="flex items-center gap-2">
+                    <Cpu className="w-4 h-4 text-slate-600" />
+                    <span>Pair / Commission New Controller</span>
+                  </div>
+                  <span className="text-[10px] font-bold text-slate-600 bg-white px-2 py-0.5 rounded-md border border-slate-200">
+                    Add Device
+                  </span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* 3. BUSINESS ADMIN & USER MANAGEMENT SECTION */}
+          {isAdmin && (
+            <div className="space-y-2">
+              <h4 className="text-xs font-black uppercase tracking-wider text-purple-700 px-1 flex items-center gap-1.5">
+                <Crown className="w-3.5 h-3.5 text-purple-600" />
+                <span>Business Administration</span>
+              </h4>
+
+              <div className="mobile-card p-4 space-y-3 bg-gradient-to-r from-purple-500/10 via-slate-50 to-purple-500/10 border-purple-200">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-xs font-black text-slate-900">User Accounts &amp; Subscription</div>
+                    <div className="text-[10px] text-slate-500">
+                      Add operators, set employee roles &amp; manage enterprise subscription quotas
+                    </div>
+                  </div>
+                  <span className="px-2 py-0.5 rounded-lg bg-purple-100 text-purple-800 text-[10px] font-black">
+                    ADMIN ONLY
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setIsAdminModalOpen(true)}
+                  className="w-full py-3 rounded-2xl bg-slate-900 hover:bg-purple-900 text-white text-xs font-black flex items-center justify-center gap-2 shadow-md transition-all cursor-pointer"
+                >
+                  <Crown className="w-4 h-4 text-purple-300" />
+                  <span>MANAGE USERS &amp; SUBSCRIPTION PLANS</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* 4. ACCOUNT & SIGN OUT */}
           <div className="mobile-card p-4 space-y-3">
             <div className="flex items-center justify-between">
               <div>
@@ -2046,26 +2481,6 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               </span>
             </div>
 
-            <button
-              type="button"
-              onClick={() => setIsNotificationModalOpen(true)}
-              className="w-full py-2.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 text-xs font-bold flex items-center justify-center gap-2 transition-colors border border-amber-200"
-            >
-              <Bell className="w-4 h-4 text-amber-600" />
-              <span>Notification & Alert Channels</span>
-            </button>
-
-            {station && (
-              <button
-                type="button"
-                onClick={() => setIsCommissionModalOpen(true)}
-                className="w-full py-2.5 rounded-xl bg-teal-50 hover:bg-teal-100 text-teal-800 text-xs font-bold flex items-center justify-center gap-2 transition-colors border border-teal-200"
-              >
-                <Cpu className="w-4 h-4 text-teal-600" />
-                <span>Pair / Commission New Controller</span>
-              </button>
-            )}
-
             {onAdminSwitch && (
               <button
                 type="button"
@@ -2073,14 +2488,14 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                 className="w-full py-2.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center gap-2 transition-colors border border-blue-200"
               >
                 <Shield className="w-4 h-4" />
-                <span>Switch to Admin Console</span>
+                <span>Switch to Advanced Admin Console</span>
               </button>
             )}
 
             <button
               type="button"
               onClick={logout}
-              className="w-full py-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold flex items-center justify-center gap-2 transition-colors border border-rose-200"
+              className="w-full py-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold flex items-center justify-center gap-2 transition-colors border border-rose-200 cursor-pointer"
             >
               <LogOut className="w-4 h-4" />
               <span>Sign Out</span>
@@ -2144,6 +2559,57 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
           isProcessing={isProcessing}
         />
       )}
+
+      {/* Admin User & Subscription Management Modal */}
+      <UserSubscriptionAdminModal
+        isOpen={isAdminModalOpen}
+        onClose={() => {
+          setIsAdminModalOpen(false);
+          loadData();
+        }}
+      />
+
+      {/* Schedule Delete Confirmation Popup */}
+      {scheduleToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in font-['Plus_Jakarta_Sans',sans-serif]">
+          <div className="bg-white w-full max-w-sm rounded-3xl p-5 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-center gap-3 text-rose-600">
+              <div className="w-10 h-10 rounded-2xl bg-rose-50 flex items-center justify-center shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-black text-slate-900">Delete Schedule?</h3>
+                <p className="text-[11px] text-slate-400">This routine will stop executing.</p>
+              </div>
+            </div>
+
+            <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100 text-xs space-y-1">
+              <div className="font-bold text-slate-800">{scheduleToDelete.name}</div>
+              <div className="text-[11px] text-slate-500">
+                Start: {scheduleToDelete.start_time} &bull; Duration: {Math.round(scheduleToDelete.duration_seconds / 60)} min
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setScheduleToDelete(null)}
+                className="flex-1 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDeleteScheduleDirect(scheduleToDelete)}
+                className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-black shadow-md shadow-rose-600/25"
+              >
+                Confirm Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
+

@@ -50,12 +50,12 @@ async def list_station_schedules_endpoint(
 async def create_station_schedule_endpoint(
     station_id: uuid.UUID,
     req: ScheduleCreate,
-    current_user: User = Depends(require_roles([UserRole.SUPER_ADMIN, UserRole.ORGANIZATION_ADMIN, UserRole.SITE_MANAGER])),
+    current_user: User = Depends(require_roles([UserRole.SUPER_ADMIN, UserRole.ORGANIZATION_ADMIN, UserRole.SITE_MANAGER, UserRole.STATION_OPERATOR, UserRole.OWNER])),
     session: AsyncSession = Depends(get_db),
 ):
     """
     Create a new schedule for a station.
-    Restricted to SUPER_ADMIN, ORGANIZATION_ADMIN, SITE_MANAGER.
+    Allows Operators, Managers, and Admins to manage schedules.
     """
     if req.station_id != station_id:
         req.station_id = station_id
@@ -80,12 +80,12 @@ async def update_station_schedule_endpoint(
     station_id: uuid.UUID,
     schedule_id: uuid.UUID,
     req: ScheduleUpdate,
-    current_user: User = Depends(require_roles([UserRole.SUPER_ADMIN, UserRole.ORGANIZATION_ADMIN, UserRole.SITE_MANAGER])),
+    current_user: User = Depends(require_roles([UserRole.SUPER_ADMIN, UserRole.ORGANIZATION_ADMIN, UserRole.SITE_MANAGER, UserRole.STATION_OPERATOR, UserRole.OWNER])),
     session: AsyncSession = Depends(get_db),
 ):
     """
-    Update a schedule rule for a station.
-    Restricted to SUPER_ADMIN, ORGANIZATION_ADMIN, SITE_MANAGER.
+    Update a schedule rule for a station (pause, resume, adjust times).
+    Allows Operators, Managers, and Admins to modify schedules.
     """
     station = await verify_station_tenant_access(session, station_id, current_user)
     if station is None:
@@ -110,12 +110,12 @@ async def update_station_schedule_endpoint(
 async def delete_station_schedule_endpoint(
     station_id: uuid.UUID,
     schedule_id: uuid.UUID,
-    current_user: User = Depends(require_roles([UserRole.SUPER_ADMIN, UserRole.ORGANIZATION_ADMIN, UserRole.SITE_MANAGER])),
+    current_user: User = Depends(require_roles([UserRole.SUPER_ADMIN, UserRole.ORGANIZATION_ADMIN, UserRole.SITE_MANAGER, UserRole.STATION_OPERATOR, UserRole.OWNER])),
     session: AsyncSession = Depends(get_db),
 ):
     """
     Delete a schedule rule for a station.
-    Restricted to SUPER_ADMIN, ORGANIZATION_ADMIN, SITE_MANAGER.
+    Allows Operators, Managers, and Admins to delete schedules.
     """
     station = await verify_station_tenant_access(session, station_id, current_user)
     if station is None:

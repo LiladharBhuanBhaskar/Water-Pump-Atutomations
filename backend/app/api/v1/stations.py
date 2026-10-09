@@ -223,12 +223,12 @@ async def get_station_settings_endpoint(
 async def update_station_settings_endpoint(
     station_id: uuid.UUID,
     req: StationSettingsUpdate,
-    current_user: User = Depends(require_roles([UserRole.SUPER_ADMIN, UserRole.ORGANIZATION_ADMIN, UserRole.SITE_MANAGER])),
+    current_user: User = Depends(require_roles([UserRole.SUPER_ADMIN, UserRole.ORGANIZATION_ADMIN, UserRole.SITE_MANAGER, UserRole.STATION_OPERATOR, UserRole.OWNER])),
     session: AsyncSession = Depends(get_db)
 ):
     """
     Update settings for a station.
-    Restricted to SUPER_ADMIN, ORGANIZATION_ADMIN, SITE_MANAGER.
+    Allows Operators, Managers, and Admins to customize thresholds.
     Enforces multi-tenant isolation and site policy.
     """
     station = await verify_station_tenant_access(session, station_id, current_user)
