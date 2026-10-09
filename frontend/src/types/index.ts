@@ -709,6 +709,7 @@ export interface UserAdminCreate {
   email: string;
   password: string;
   role: UserRole;
+  is_active?: boolean;
   organization_id?: string;
 }
 
