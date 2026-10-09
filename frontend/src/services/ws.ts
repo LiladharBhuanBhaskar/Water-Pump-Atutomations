@@ -6,6 +6,7 @@
  */
 
 import { WsServerEvent } from '../types';
+import { getServerBaseUrl } from './api';
 
 type EventListener = (event: WsServerEvent) => void;
 type ConnectionStateListener = (connected: boolean) => void;
@@ -47,9 +48,21 @@ class WebSocketService {
       this.socket = null;
     }
 
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.host;
-    const wsUrl = `${protocol}//${host}/api/v1/ws?token=${encodeURIComponent(this.token)}`;
+    let wsUrl = '';
+    const serverUrl = getServerBaseUrl();
+    if (serverUrl) {
+      try {
+        const urlObj = new URL(serverUrl);
+        const wsProto = urlObj.protocol === 'https:' ? 'wss:' : 'ws:';
+        wsUrl = `${wsProto}//${urlObj.host}/api/v1/ws?token=${encodeURIComponent(this.token)}`;
+      } catch {
+        wsUrl = `ws://${serverUrl.replace(/^https?:\/\//, '')}/api/v1/ws?token=${encodeURIComponent(this.token)}`;
+      }
+    } else {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const host = window.location.host;
+      wsUrl = `${protocol}//${host}/api/v1/ws?token=${encodeURIComponent(this.token)}`;
+    }
 
     try {
       this.socket = new WebSocket(wsUrl);

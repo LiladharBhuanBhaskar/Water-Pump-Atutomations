@@ -1,7 +1,22 @@
 import React, { useState } from 'react';
-import { Droplets, Lock, Mail, AlertCircle, ArrowRight, Shield, User, Sparkles, CheckCircle2 } from 'lucide-react';
+import {
+  Droplets,
+  Lock,
+  Mail,
+  AlertCircle,
+  ArrowRight,
+  Shield,
+  User,
+  Sparkles,
+  CheckCircle2,
+  Globe,
+  RefreshCw,
+  Check,
+  Wifi,
+} from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { Button } from '../components/common/Button';
+import { getServerBaseUrl } from '../services/api';
 
 export const Login: React.FC = () => {
   const { login } = useAuth();
@@ -11,6 +26,49 @@ export const Login: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [selectedRole, setSelectedRole] = useState<'ADMIN' | 'USER' | null>(null);
 
+  // Server Connection Configuration (for Android APK / LAN / Cloud)
+  const [serverUrl, setServerUrl] = useState<string>(() => {
+    return getServerBaseUrl() || 'http://192.168.1.13:8000';
+  });
+  const [showServerConfig, setShowServerConfig] = useState<boolean>(false);
+  const [isTestingServer, setIsTestingServer] = useState<boolean>(false);
+  const [serverTestStatus, setServerTestStatus] = useState<'IDLE' | 'SUCCESS' | 'FAILED'>('IDLE');
+  const [serverTestMessage, setServerTestMessage] = useState<string | null>(null);
+
+  const handleSaveServerUrl = (url: string) => {
+    setServerUrl(url);
+    if (url.trim()) {
+      localStorage.setItem('hydra_server_url', url.trim().replace(/\/+$/, ''));
+    } else {
+      localStorage.removeItem('hydra_server_url');
+    }
+  };
+
+  const handleTestConnection = async () => {
+    setIsTestingServer(true);
+    setServerTestStatus('IDLE');
+    setServerTestMessage(null);
+    const target = serverUrl.trim().replace(/\/+$/, '');
+    try {
+      const startTime = Date.now();
+      const res = await fetch(`${target}/health/live`, { method: 'GET' });
+      const latency = Date.now() - startTime;
+      if (res.ok) {
+        setServerTestStatus('SUCCESS');
+        setServerTestMessage(`✓ Connected successfully! (${latency}ms)`);
+        localStorage.setItem('hydra_server_url', target);
+      } else {
+        setServerTestStatus('FAILED');
+        setServerTestMessage(`HTTP ${res.status}: Server returned error.`);
+      }
+    } catch (err: any) {
+      setServerTestStatus('FAILED');
+      setServerTestMessage(`Cannot connect to ${target}. Ensure laptop & phone are on the same Wi-Fi.`);
+    } finally {
+      setIsTestingServer(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) {
@@ -18,12 +76,16 @@ export const Login: React.FC = () => {
       return;
     }
 
+    if (serverUrl.trim()) {
+      localStorage.setItem('hydra_server_url', serverUrl.trim().replace(/\/+$/, ''));
+    }
+
     setError(null);
     setLoading(true);
     try {
       await login(email, password);
     } catch (err: any) {
-      setError(err.message || 'Login failed. Please check your credentials.');
+      setError(err.message || 'Login failed. Please check credentials or Server IP.');
     } finally {
       setLoading(false);
     }
@@ -173,6 +235,75 @@ export const Login: React.FC = () => {
               Sign In to HydraControl
             </Button>
           </form>
+
+          {/* Server Connection Settings Accordion (Essential for APK / LAN / Wi-Fi) */}
+          <div className="mt-5 pt-4 border-t border-slate-800/80">
+            <button
+              type="button"
+              onClick={() => setShowServerConfig(!showServerConfig)}
+              className="w-full flex items-center justify-between text-xs text-slate-400 hover:text-cyan-400 transition-colors py-1"
+            >
+              <div className="flex items-center gap-2">
+                <Wifi className="w-3.5 h-3.5 text-cyan-400" />
+                <span className="font-semibold">Server Connection (Wi-Fi / Cloud)</span>
+              </div>
+              <span className="text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded-full font-mono">
+                {showServerConfig ? 'Hide' : 'Configure IP'}
+              </span>
+            </button>
+
+            {showServerConfig && (
+              <div className="mt-3 p-3.5 rounded-2xl bg-slate-950/70 border border-slate-800/80 space-y-3 animate-fadeIn">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                    <Globe className="w-3 h-3 text-cyan-400" /> Backend Host URL
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={serverUrl}
+                      onChange={(e) => handleSaveServerUrl(e.target.value)}
+                      placeholder="http://192.168.1.13:8000"
+                      className="glass-input flex-1 px-3 py-2 rounded-xl text-xs font-mono"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleTestConnection}
+                      disabled={isTestingServer || !serverUrl}
+                      className="px-3 py-2 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 text-xs font-semibold border border-cyan-500/30 flex items-center gap-1.5 disabled:opacity-50 transition-all"
+                    >
+                      {isTestingServer ? (
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Check className="w-3.5 h-3.5" />
+                      )}
+                      Test
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-slate-500">
+                    Default Wi-Fi IP: <code className="text-cyan-400">http://192.168.1.13:8000</code>
+                  </p>
+                </div>
+
+                {serverTestStatus !== 'IDLE' && (
+                  <div
+                    className={`p-2.5 rounded-xl text-xs flex items-center gap-2 ${
+                      serverTestStatus === 'SUCCESS'
+                        ? 'bg-emerald-950/80 border border-emerald-800/60 text-emerald-300'
+                        : 'bg-rose-950/80 border border-rose-800/60 text-rose-300'
+                    }`}
+                  >
+                    {serverTestStatus === 'SUCCESS' ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0" />
+                    )}
+                    <span className="text-[11px]">{serverTestMessage}</span>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Footer info */}

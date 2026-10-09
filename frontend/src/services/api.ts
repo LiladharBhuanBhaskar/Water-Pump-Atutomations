@@ -36,7 +36,27 @@ import {
   MotorTimerStatus,
 } from '../types';
 
-const API_BASE = '/api/v1';
+export function getServerBaseUrl(): string {
+  const savedUrl = localStorage.getItem('hydra_server_url');
+  if (savedUrl && savedUrl.trim()) {
+    return savedUrl.trim().replace(/\/+$/, '');
+  }
+  // Detect if running inside native Android / Capacitor container
+  const isCapacitor =
+    typeof window !== 'undefined' &&
+    (window.location.protocol === 'capacitor:' ||
+      window.location.protocol === 'file:' ||
+      (window.location.hostname === 'localhost' && window.location.port === ''));
+  if (isCapacitor) {
+    return 'http://192.168.1.13:8000';
+  }
+  return '';
+}
+
+export function getApiBaseUrl(): string {
+  const server = getServerBaseUrl();
+  return server ? `${server}/api/v1` : '/api/v1';
+}
 
 class ApiService {
   private getToken(): string | null {
@@ -57,7 +77,8 @@ class ApiService {
       headers['Authorization'] = `Bearer ${token}`;
     }
 
-    const response = await fetch(`${API_BASE}${endpoint}`, {
+    const apiBase = getApiBaseUrl();
+    const response = await fetch(`${apiBase}${endpoint}`, {
       ...options,
       headers,
     });
@@ -88,7 +109,8 @@ class ApiService {
 
   // Authentication Endpoints
   async login(email: string, password: string): Promise<{ access_token: string; token_type: string }> {
-    const response = await fetch(`${API_BASE}/auth/login`, {
+    const apiBase = getApiBaseUrl();
+    const response = await fetch(`${apiBase}/auth/login`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

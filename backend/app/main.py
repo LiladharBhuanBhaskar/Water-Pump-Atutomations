@@ -178,10 +178,10 @@ from app.core.logging_middleware import CorrelationAndLoggingMiddleware
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(CorrelationAndLoggingMiddleware)
 
-# CORS Middleware
+# CORS Middleware (Permits Web, Mobile APK, Capacitor & Local LAN IPs)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
+    allow_origins=["*"] if settings.ENVIRONMENT == "development" else settings.CORS_ORIGINS + ["capacitor://localhost", "http://localhost", "https://localhost"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
