@@ -30,6 +30,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logout = () => {
     localStorage.removeItem('hydra_token');
+    localStorage.removeItem('hydra_cached_user');
     setToken(null);
     setUser(null);
   };
@@ -46,14 +47,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     const initAuth = async () => {
       const storedToken = localStorage.getItem('hydra_token');
+      const cachedUserStr = localStorage.getItem('hydra_cached_user');
       if (storedToken) {
+        if (cachedUserStr) {
+          try {
+            setUser(JSON.parse(cachedUserStr));
+            setToken(storedToken);
+          } catch {}
+        }
         try {
           const userData = await api.getMe();
           setUser(userData);
           setToken(storedToken);
+          localStorage.setItem('hydra_cached_user', JSON.stringify(userData));
         } catch (err) {
-          console.error('Failed restoring session:', err);
-          logout();
+          console.error('Session verification notice:', err);
+          if (!cachedUserStr) {
+            logout();
+          }
         }
       }
       setIsLoading(false);
@@ -69,8 +80,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       localStorage.setItem('hydra_token', authResp.access_token);
       setToken(authResp.access_token);
 
-      const userData = await api.getMe();
-      setUser(userData);
+      if (authResp.user) {
+        setUser(authResp.user);
+        localStorage.setItem('hydra_cached_user', JSON.stringify(authResp.user));
+      } else {
+        const userData = await api.getMe();
+        setUser(userData);
+        localStorage.setItem('hydra_cached_user', JSON.stringify(userData));
+      }
     } finally {
       setIsLoading(false);
     }

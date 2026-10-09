@@ -38,25 +38,44 @@ import {
 
 export function isNativeCapacitorApp(): boolean {
   if (typeof window === 'undefined') return false;
-  return (
-    window.location.protocol === 'capacitor:' ||
-    window.location.protocol === 'file:' ||
-    !!(window as any).Capacitor?.isNativePlatform?.()
-  );
+
+  // 1. Check Capacitor global object
+  if (typeof (window as any).Capacitor !== 'undefined') {
+    const platform = (window as any).Capacitor.getPlatform?.();
+    if (platform === 'android' || platform === 'ios') return true;
+    if ((window as any).Capacitor.isNativePlatform?.()) return true;
+  }
+
+  // 2. Protocol checks
+  if (window.location.protocol === 'capacitor:' || window.location.protocol === 'file:') {
+    return true;
+  }
+
+  // 3. Android Capacitor WebView serves from https://localhost or http://localhost with NO port
+  const isLocalhostNoPort =
+    (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') &&
+    (window.location.port === '' || window.location.port === '80' || window.location.port === '443');
+
+  if (isLocalhostNoPort && window.location.port !== '5173') {
+    return true;
+  }
+
+  return false;
 }
 
 export function getServerBaseUrl(): string {
-  // If running inside native Android / Capacitor container, default to Wi-Fi LAN IP
+  // Check if a server URL is stored in localStorage
+  const savedUrl = localStorage.getItem('hydra_mobile_server_url') || localStorage.getItem('hydra_server_url');
+  if (savedUrl && savedUrl.trim()) {
+    return savedUrl.trim().replace(/\/+$/, '');
+  }
+
+  // If running inside native Android / Capacitor container, default to laptop Wi-Fi LAN IP
   if (isNativeCapacitorApp()) {
-    const savedUrl = localStorage.getItem('hydra_mobile_server_url') || localStorage.getItem('hydra_server_url');
-    if (savedUrl && savedUrl.trim()) {
-      return savedUrl.trim().replace(/\/+$/, '');
-    }
     return 'http://192.168.1.13:8000';
   }
 
-  // On standard Web browser (laptop localhost), ALWAYS use relative proxy /api/v1
-  // Check if developer explicitly configured a custom remote cloud host
+  // On standard Web browser (laptop localhost), check custom server or fallback to empty string (relative proxy /api/v1)
   const webCustomServer = localStorage.getItem('hydra_web_custom_server');
   if (webCustomServer && webCustomServer.trim()) {
     return webCustomServer.trim().replace(/\/+$/, '');
@@ -97,6 +116,7 @@ class ApiService {
     if (response.status === 401) {
       // Clear token on 401 Unauthorized
       localStorage.removeItem('hydra_token');
+      localStorage.removeItem('hydra_cached_user');
       window.dispatchEvent(new Event('auth:unauthorized'));
     }
 
@@ -119,7 +139,7 @@ class ApiService {
   }
 
   // Authentication Endpoints
-  async login(email: string, password: string): Promise<{ access_token: string; token_type: string }> {
+  async login(email: string, password: string): Promise<{ access_token: string; token_type: string; refresh_token?: string; user?: User }> {
     const apiBase = getApiBaseUrl();
     const response = await fetch(`${apiBase}/auth/login`, {
       method: 'POST',

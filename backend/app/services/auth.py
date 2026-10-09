@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from app.models.user import User, UserRole
-from app.schemas.auth import UserRegistrationRequest, LoginRequest, TokenResponse
+from app.schemas.auth import UserRegistrationRequest, LoginRequest, TokenResponse, UserResponse
 from app.core.security import get_password_hash, verify_password, create_access_token
 
 class UserAlreadyExistsException(Exception):
@@ -67,4 +67,16 @@ async def authenticate_user(session: AsyncSession, req: LoginRequest) -> TokenRe
         organization_id=user.organization_id,
         role=user.role.value if hasattr(user.role, "value") else str(user.role),
     )
-    return TokenResponse(access_token=access_token, refresh_token=refresh_token, token_type="bearer")
+    user_response = UserResponse(
+        id=user.id,
+        name=user.name,
+        email=user.email,
+        role=user.role.value if hasattr(user.role, "value") else str(user.role),
+        is_active=user.is_active,
+    )
+    return TokenResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        token_type="bearer",
+        user=user_response,
+    )
