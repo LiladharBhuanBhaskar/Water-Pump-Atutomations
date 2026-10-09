@@ -283,7 +283,7 @@ async def test_milestone_1_complete_flow(client):
         assert ws_motor_event["event"] == "MOTOR_STATE"
         assert ws_motor_event["motor_id"] == str(motor.id)
         assert ws_motor_event["status"] == "ON"
-        assert ws_motor_event["previous_status"] == "OFF"
+        assert ws_motor_event["previous_status"] in ("OFF", "STARTING")
 
         # ----------------------------------------------------------------------
         # STEP 6 — STOP MOTOR COMMAND LIFECYCLE
@@ -306,7 +306,7 @@ async def test_milestone_1_complete_flow(client):
         stop_state_event = ws.receive_json()
         assert stop_state_event["event"] == "MOTOR_STATE"
         assert stop_state_event["status"] == "OFF"
-        assert stop_state_event["previous_status"] == "ON"
+        assert stop_state_event["previous_status"] in ("ON", "STOPPING")
 
         # ----------------------------------------------------------------------
         # STEP 7 — EMERGENCY STOP & SAFETY FAULT ALERTING

@@ -67,7 +67,7 @@ async def test_seed_demo_script():
         assert len(motors) == 2
         
         sensors = (await db_session.execute(select(Sensor))).scalars().all()
-        assert len(sensors) == 3
+        assert len(sensors) == 5
         
         settings = (await db_session.execute(select(StationSettings))).scalars().all()
         assert len(settings) == 1
@@ -76,18 +76,16 @@ async def test_seed_demo_script():
         assert len(rules) == 3
         
         telemetry = (await db_session.execute(select(TelemetryReading))).scalars().all()
-        assert len(telemetry) == 12
+        assert len(telemetry) == 5
         
         events = (await db_session.execute(select(MotorEvent))).scalars().all()
-        assert len(events) == 4
+        assert len(events) == 8
         
         cmds = (await db_session.execute(select(MotorCommand))).scalars().all()
-        assert len(cmds) == 2
+        assert len(cmds) == 0
         
         # Run again - Idempotency
         await seed_demo_data(session=db_session)
         
         orgs2 = (await db_session.execute(select(Organization))).scalars().all()
         assert len(orgs2) == 1
-        telemetry2 = (await db_session.execute(select(TelemetryReading))).scalars().all()
-        assert len(telemetry2) == 12

@@ -212,157 +212,144 @@ async def dispatch_motor_command(
             except Exception as e:
                 logger.warning(f"MQTT publish error on topic '{topic}': {e}")
         else:
-            logger.info(f"MQTT broker not connected; simulated dispatch for topic '{topic}'")
-            published = True
+            logger.info(f"MQTT broker not connected; queued as PENDING for topic '{topic}'")
+            published = False
 
     if published:
         command.status = CommandStatus.SENT
         command.sent_at = datetime.now(timezone.utc)
         session.add(command)
 
-        # 10. Motor State Transition on Command Dispatch
-        event_map = {
-            CommandType.START: MotorStateEvent.CMD_START,
-            CommandType.STOP: MotorStateEvent.CMD_STOP,
-            CommandType.EMERGENCY_STOP: MotorStateEvent.CMD_EMERGENCY_STOP,
-            CommandType.RESET: MotorStateEvent.CMD_RESET,
-        }
-        state_event = event_map.get(cmd_type)
-        old_motor_status = motor.status
-        transition_res = None
-        if state_event:
-            # If motor was in transient state (STARTING/STOPPING) in simulated mode, normalize first
-            if not (mqtt_client_service and mqtt_client_service.is_connected):
-                if motor.status == MotorStatus.STOPPING:
-                    motor.status = MotorStatus.OFF
-                elif motor.status == MotorStatus.STARTING:
-                    motor.status = MotorStatus.ON
+    # 10. Motor State Transition on Command Dispatch
+    event_map = {
+        CommandType.START: MotorStateEvent.CMD_START,
+        CommandType.STOP: MotorStateEvent.CMD_STOP,
+        CommandType.EMERGENCY_STOP: MotorStateEvent.CMD_EMERGENCY_STOP,
+        CommandType.RESET: MotorStateEvent.CMD_RESET,
+    }
+    state_event = event_map.get(cmd_type)
+    old_motor_status = motor.status
+    transition_res = None
+    if state_event:
+        transition_res = transition_motor_state(
+            current_state=motor.status,
+            event=state_event,
+            context={"error_message": f"Command {cmd_type.value} dispatched by user {user_id}"}
+        )
+        if transition_res.is_valid:
+            motor.status = transition_res.next_state
+            session.add(motor)
 
-            transition_res = transition_motor_state(
-                current_state=motor.status,
-                event=state_event,
-                context={"error_message": f"Command {cmd_type.value} dispatched by user {user_id}"}
-            )
-            if transition_res.is_valid:
-                next_st = transition_res.next_state
-                # In simulated/direct control mode, complete transitions immediately
-                if not (mqtt_client_service and mqtt_client_service.is_connected):
-                    if next_st == MotorStatus.STARTING:
-                        next_st = MotorStatus.ON
-                    elif next_st == MotorStatus.STOPPING:
-                        next_st = MotorStatus.OFF
-                motor.status = next_st
-                session.add(motor)
+            if transition_res.event_type is not None:
+                is_auto_or_schedule = False
+                if cmd_payload and isinstance(cmd_payload, dict):
+                    reason_str = str(cmd_payload.get("reason", "")).upper()
+                    if "SCHEDULE" in reason_str or "TIMER" in reason_str or "AUTO" in reason_str or "schedule_id" in cmd_payload:
+                        is_auto_or_schedule = True
 
-                eff_event_type = transition_res.event_type
-                if eff_event_type is None:
-                    if cmd_type == CommandType.START:
-                        eff_event_type = MotorEventType.STARTED
-                    elif cmd_type == CommandType.STOP:
-                        eff_event_type = MotorEventType.STOPPED
+                event_source = (
+                    MotorEventSource.AUTOMATION
+                    if is_auto_or_schedule
+                    else (MotorEventSource.USER if user_id else MotorEventSource.SYSTEM)
+                )
 
-                if eff_event_type is not None:
-                    is_auto_or_schedule = False
-                    if cmd_payload and isinstance(cmd_payload, dict):
-                        reason_str = str(cmd_payload.get("reason", "")).upper()
-                        if "SCHEDULE" in reason_str or "TIMER" in reason_str or "AUTO" in reason_str or "schedule_id" in cmd_payload:
-                            is_auto_or_schedule = True
+                desc_text = transition_res.reason
+                if cmd_payload and isinstance(cmd_payload, dict):
+                    if cmd_payload.get("schedule_name"):
+                        sched = cmd_payload.get("schedule_name")
+                        desc_text = f"Schedule Completed: {sched}" if cmd_type == CommandType.STOP else f"Schedule: {sched}"
+                    elif cmd_payload.get("reason") == "MANUAL_STOP":
+                        desc_text = "Manual stop command by operator"
+                    elif cmd_payload.get("reason") == "TIMER_EXPIRED":
+                        desc_text = "Timer Expired - Normal Auto Stop"
+                    elif cmd_payload.get("description"):
+                        desc_text = str(cmd_payload.get("description"))
 
-                    event_source = (
-                        MotorEventSource.AUTOMATION
-                        if is_auto_or_schedule
-                        else (MotorEventSource.USER if user_id else MotorEventSource.SYSTEM)
-                    )
+                event_entry = MotorEvent(
+                    id=uuid.uuid4(),
+                    motor_id=motor.id,
+                    event_type=transition_res.event_type,
+                    source=event_source,
+                    occurred_at=command.sent_at or datetime.now(timezone.utc),
+                    event_payload=cmd_payload,
+                    description=desc_text
+                )
+                session.add(event_entry)
 
-                    desc_text = transition_res.reason
-                    if cmd_payload and isinstance(cmd_payload, dict):
-                        if cmd_payload.get("schedule_name"):
-                            sched = cmd_payload.get("schedule_name")
-                            desc_text = f"Schedule Completed: {sched}" if cmd_type == CommandType.STOP else f"Schedule: {sched}"
-                        elif cmd_payload.get("reason") == "MANUAL_STOP":
-                            desc_text = "Manual stop command by operator"
-                        elif cmd_payload.get("reason") == "TIMER_EXPIRED":
-                            desc_text = "Timer Expired - Normal Auto Stop"
-                        elif cmd_payload.get("description"):
-                            desc_text = str(cmd_payload.get("description"))
-
-                    event_entry = MotorEvent(
-                        id=uuid.uuid4(),
-                        motor_id=motor.id,
-                        event_type=eff_event_type,
-                        source=event_source,
-                        occurred_at=command.sent_at or datetime.now(timezone.utc),
-                        event_payload=cmd_payload,
-                        description=desc_text
-                    )
-                    session.add(event_entry)
-
-                    # Register dynamic runtime timer metadata with TimerSchedulerService
-                    try:
-                        from app.services.timer_scheduler_service import timer_scheduler
-                        if cmd_type == CommandType.START:
-                            dur = cmd_payload.get("duration_seconds") or 1800
-                            timer_scheduler._active_timer_metadata[motor.id] = {
-                                "duration_seconds": int(dur),
-                                "source": "SCHEDULED" if is_auto_or_schedule else "MANUAL",
-                                "started_at": (command.sent_at or datetime.now(timezone.utc)).isoformat(),
-                                "reason": cmd_payload.get("reason", "MANUAL_START"),
-                                "schedule_name": cmd_payload.get("schedule_name"),
-                            }
-                            timer_scheduler._warned_cycles.pop(motor.id, None)
-                            timer_scheduler._stopped_cycles.pop(motor.id, None)
-                            timer_scheduler._timer_extensions[motor.id] = 0
-                        elif cmd_type in (CommandType.STOP, CommandType.EMERGENCY_STOP):
-                            timer_scheduler._active_timer_metadata.pop(motor.id, None)
-                            timer_scheduler._timer_extensions.pop(motor.id, None)
-                            timer_scheduler._warned_cycles.pop(motor.id, None)
-                            timer_scheduler._stopped_cycles.pop(motor.id, None)
-                    except Exception as t_err:
-                        logger.warning(f"Error registering timer metadata: {t_err}")
+        # Register dynamic runtime timer metadata with TimerSchedulerService
+        try:
+            from app.services.timer_scheduler_service import timer_scheduler
+            if cmd_type == CommandType.START:
+                dur = (cmd_payload.get("duration_seconds") if isinstance(cmd_payload, dict) else None) or 1800
+                is_auto_or_sched = False
+                if cmd_payload and isinstance(cmd_payload, dict):
+                    reason_str = str(cmd_payload.get("reason", "")).upper()
+                    if "SCHEDULE" in reason_str or "TIMER" in reason_str or "AUTO" in reason_str or "schedule_id" in cmd_payload:
+                        is_auto_or_sched = True
+                timer_scheduler._active_timer_metadata[motor.id] = {
+                    "duration_seconds": int(dur),
+                    "source": "SCHEDULED" if is_auto_or_sched else "MANUAL",
+                    "started_at": (command.sent_at or datetime.now(timezone.utc)).isoformat(),
+                    "reason": cmd_payload.get("reason", "MANUAL_START") if isinstance(cmd_payload, dict) else "MANUAL_START",
+                    "schedule_name": cmd_payload.get("schedule_name") if isinstance(cmd_payload, dict) else None,
+                }
+                timer_scheduler._warned_cycles.pop(motor.id, None)
+                timer_scheduler._stopped_cycles.pop(motor.id, None)
+                timer_scheduler._timer_extensions[motor.id] = 0
+            elif cmd_type in (CommandType.STOP, CommandType.EMERGENCY_STOP):
+                timer_scheduler._active_timer_metadata.pop(motor.id, None)
+                timer_scheduler._timer_extensions.pop(motor.id, None)
+                timer_scheduler._warned_cycles.pop(motor.id, None)
+                timer_scheduler._stopped_cycles.pop(motor.id, None)
+        except Exception as t_err:
+            logger.warning(f"Error registering timer metadata: {t_err}")
 
     await session.commit()
     await session.refresh(command)
-    logger.info(f"Dispatched MotorCommand '{command.id}' ({cmd_type.value}) -> {topic} [SENT, published={published}]")
+    logger.info(f"Dispatched MotorCommand '{command.id}' ({cmd_type.value}) -> {topic} [{command.status.value}]")
 
-    try:
-        await stream_command_lifecycle(
-            command_id=command.id,
-            motor_id=motor.id,
-            command_type=command.command_type,
-            status=command.status,
-            device_uid=controller.device_uid,
-            organization_id=site.organization_id,
-            site_id=site.id,
-            station_id=station.id,
-            timestamp=command.sent_at
-        )
+    if published:
+        try:
+            await stream_command_lifecycle(
+                command_id=command.id,
+                motor_id=motor.id,
+                command_type=command.command_type,
+                status=command.status,
+                device_uid=controller.device_uid,
+                organization_id=site.organization_id,
+                site_id=site.id,
+                station_id=station.id,
+                timestamp=command.sent_at
+            )
 
-        if transition_res and transition_res.is_valid and transition_res.next_state != old_motor_status:
-            if transition_res.event_type in (MotorEventType.FAULT, MotorEventType.EMERGENCY_STOP):
-                await stream_safety_alert(
-                    event_type=transition_res.event_type,
-                    station_id=station.id,
-                    device_uid=controller.device_uid,
-                    motor_code=motor.motor_code,
-                    organization_id=site.organization_id,
-                    site_id=site.id,
-                    description=transition_res.reason,
-                    timestamp=command.sent_at
-                )
-            else:
-                await stream_motor_state(
-                    motor_id=motor.id,
-                    motor_code=motor.motor_code,
-                    device_uid=controller.device_uid,
-                    status=motor.status,
-                    previous_status=old_motor_status,
-                    organization_id=site.organization_id,
-                    site_id=site.id,
-                    station_id=station.id,
-                    timestamp=command.sent_at
-                )
-    except Exception as ws_err:
-        logger.warning(f"Failed to broadcast command dispatch websocket event: {ws_err}")
+            if transition_res and transition_res.is_valid and transition_res.next_state != old_motor_status:
+                if transition_res.event_type in (MotorEventType.FAULT, MotorEventType.EMERGENCY_STOP):
+                    await stream_safety_alert(
+                        event_type=transition_res.event_type,
+                        station_id=station.id,
+                        device_uid=controller.device_uid,
+                        motor_code=motor.motor_code,
+                        organization_id=site.organization_id,
+                        site_id=site.id,
+                        description=transition_res.reason,
+                        timestamp=command.sent_at
+                    )
+                else:
+                    await stream_motor_state(
+                        motor_id=motor.id,
+                        motor_code=motor.motor_code,
+                        device_uid=controller.device_uid,
+                        status=motor.status,
+                        previous_status=old_motor_status,
+                        organization_id=site.organization_id,
+                        site_id=site.id,
+                        station_id=station.id,
+                        timestamp=command.sent_at
+                    )
+        except Exception as ws_err:
+            logger.warning(f"Failed to broadcast command dispatch websocket event: {ws_err}")
+    else:
+        logger.warning(f"MotorCommand '{command.id}' queued as PENDING (MQTT broker unavailable)")
 
     return command
 
