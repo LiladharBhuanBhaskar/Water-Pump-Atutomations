@@ -276,12 +276,19 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
 
       // 6. Process Active Timer
       if (timerRes.status === 'fulfilled' && timerRes.value) {
-        if (timerRes.value.is_running) {
-          setActiveTimer(timerRes.value);
-          setRemainingSeconds(Math.max(0, Math.round(timerRes.value.remaining_seconds)));
+        const timerVal = timerRes.value;
+        if (timerVal.is_running && timerVal.remaining_seconds > 0) {
+          setActiveTimer(timerVal);
+          setRemainingSeconds(Math.max(0, Math.round(timerVal.remaining_seconds)));
         } else {
           setActiveTimer(null);
           setRemainingSeconds(0);
+          if (timerVal.status === 'OFF' || !timerVal.is_running) {
+            setMotor((prev) => (prev && prev.status === 'ON' && !timerVal.is_running ? { ...prev, status: 'OFF' } : prev));
+            setMotorsList((prev) =>
+              prev.map((m) => (m.id === targetMotorId && !timerVal.is_running ? { ...m, status: 'OFF' } : m))
+            );
+          }
         }
       }
     } catch {
@@ -681,11 +688,22 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
       const now = Date.now();
       const diff = Math.max(0, Math.floor((target - now) / 1000));
       setRemainingSeconds(diff);
+
+      // When scheduled session reaches final time (0), immediately close motor and switch power button back to START
+      if (diff <= 0) {
+        setActiveTimer(null);
+        setRemainingSeconds(0);
+        setMotor((prev) => (prev ? { ...prev, status: 'OFF' } : null));
+        setMotorsList((prev) =>
+          prev.map((m) => (m.id === motor?.id ? { ...m, status: 'OFF' } : m))
+        );
+        debouncedSync(100);
+      }
     };
     updateTick();
     const interval = setInterval(updateTick, 1000);
     return () => clearInterval(interval);
-  }, [activeTimer, motor?.status]);
+  }, [activeTimer, motor?.status, motor?.id, debouncedSync]);
 
   // Live WebSocket updates
   useEffect(() => {
@@ -711,28 +729,31 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
         ...prev.slice(0, 10),
       ]);
 
+      const targetId = latestWsEvent.motor_id || (latestWsEvent.metadata?.motor_id as string);
       if (latestWsEvent.event_type === 'SCHEDULE_STARTED') {
-        setMotor((prev) => (prev ? { ...prev, status: 'ON' } : null));
+        setMotor((prev) => (prev && (!targetId || prev.id === targetId) ? { ...prev, status: 'ON' } : prev));
         setMotorsList((prev) =>
-          prev.map((m) => (m.id === latestWsEvent.motor_id ? { ...m, status: 'ON' } : m))
+          prev.map((m) => (!targetId || m.id === targetId ? { ...m, status: 'ON' } : m))
         );
         debouncedSync(200);
       } else if (
         latestWsEvent.event_type === 'SCHEDULE_STOPPED' ||
-        latestWsEvent.event_type === 'TIMER_EXPIRED'
+        latestWsEvent.event_type === 'TIMER_EXPIRED' ||
+        latestWsEvent.event_type?.includes('STOPPED') ||
+        latestWsEvent.event_type?.includes('EXPIRED')
       ) {
-        setMotor((prev) => (prev ? { ...prev, status: 'OFF' } : null));
+        setMotor((prev) => (prev && (!targetId || prev.id === targetId) ? { ...prev, status: 'OFF' } : prev));
         setMotorsList((prev) =>
-          prev.map((m) => (m.id === latestWsEvent.motor_id ? { ...m, status: 'OFF' } : m))
+          prev.map((m) => (!targetId || m.id === targetId ? { ...m, status: 'OFF' } : m))
         );
         setActiveTimer(null);
         setRemainingSeconds(0);
-        debouncedSync(200);
+        debouncedSync(100);
       } else if (
         latestWsEvent.event_type?.includes('SCHEDULE') ||
         latestWsEvent.event_type?.includes('TIMER')
       ) {
-        debouncedSync(300);
+        debouncedSync(200);
       }
     } else if (latestWsEvent.event === 'SAFETY_ALERT') {
       audioAlert.playBuzzer(latestWsEvent.timestamp, 'CRITICAL');
@@ -759,13 +780,23 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
         setVoltage(val);
       }
     } else if (latestWsEvent.event === 'MOTOR_STATE') {
-      if (!motor || latestWsEvent.motor_id === motor.id) {
-        setMotor((prev) => (prev ? { ...prev, status: latestWsEvent.status } : null));
+      const targetId = latestWsEvent.motor_id;
+      const newStatus = latestWsEvent.status;
+      if (!motor || targetId === motor.id) {
+        setMotor((prev) => (prev ? { ...prev, status: newStatus } : null));
+        if (newStatus === 'OFF' || (newStatus as string) === 'STOPPED') {
+          setActiveTimer(null);
+          setRemainingSeconds(0);
+        }
       }
       setMotorsList((prev) =>
-        prev.map((m) => (m.id === latestWsEvent.motor_id ? { ...m, status: latestWsEvent.status } : m))
+        prev.map((m) => (m.id === targetId ? { ...m, status: newStatus } : m))
       );
-      debouncedSync(200);
+      if (newStatus === 'OFF' || (newStatus as string) === 'STOPPED') {
+        setActiveTimer(null);
+        setRemainingSeconds(0);
+      }
+      debouncedSync(100);
     } else if (latestWsEvent.event === 'COMMAND_LIFECYCLE') {
       if (
         latestWsEvent.status === 'EXECUTED' ||

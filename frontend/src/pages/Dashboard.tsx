@@ -77,26 +77,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ latestWsEvent }) => {
   const [timerRemainingSeconds, setTimerRemainingSeconds] = useState<Record<string, number>>({});
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState<boolean>(false);
 
-  // Synchronized countdown ticker
-  useEffect(() => {
-    const updateTicker = () => {
-      const now = Date.now();
-      const updated: Record<string, number> = {};
-      for (const [mId, t] of Object.entries(motorTimers)) {
-        if (t && t.end_time) {
-          const target = new Date(t.end_time).getTime();
-          updated[mId] = Math.max(0, Math.floor((target - now) / 1000));
-        } else {
-          updated[mId] = 0;
-        }
-      }
-      setTimerRemainingSeconds(updated);
-    };
-    updateTicker();
-    const interval = setInterval(updateTicker, 1000);
-    return () => clearInterval(interval);
-  }, [motorTimers]);
-
   // Phase 17 & Phase 20 State
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState<boolean>(false);
   const [isEventHistoryModalOpen, setIsEventHistoryModalOpen] = useState<boolean>(false);
@@ -323,6 +303,43 @@ export const Dashboard: React.FC<DashboardProps> = ({ latestWsEvent }) => {
     loadHierarchyDetails();
   }, [loadHierarchyDetails]);
 
+  // Synchronized countdown ticker
+  useEffect(() => {
+    const updateTicker = () => {
+      const now = Date.now();
+      const updated: Record<string, number> = {};
+      let hasExpired = false;
+
+      for (const [mId, t] of Object.entries(motorTimers)) {
+        if (t && t.end_time) {
+          const target = new Date(t.end_time).getTime();
+          const diff = Math.max(0, Math.floor((target - now) / 1000));
+          updated[mId] = diff;
+          if (diff <= 0) {
+            hasExpired = true;
+            setMotors((prev) =>
+              prev.map((m) => (m.id === mId ? { ...m, status: 'OFF' } : m))
+            );
+            setMotorTimers((prev) => {
+              const next = { ...prev };
+              delete next[mId];
+              return next;
+            });
+          }
+        } else {
+          updated[mId] = 0;
+        }
+      }
+      setTimerRemainingSeconds(updated);
+      if (hasExpired) {
+        loadHierarchyDetails();
+      }
+    };
+    updateTicker();
+    const interval = setInterval(updateTicker, 1000);
+    return () => clearInterval(interval);
+  }, [motorTimers, loadHierarchyDetails]);
+
   // Handle incoming real-time WebSocket events
   useEffect(() => {
     if (!latestWsEvent) return;
@@ -418,22 +435,39 @@ export const Dashboard: React.FC<DashboardProps> = ({ latestWsEvent }) => {
       };
       setSafetyAlerts((prev) => [newAlert, ...prev.slice(0, 5)]);
 
-      if (latestWsEvent.motor_id) {
+      const targetMotorId = latestWsEvent.motor_id || (latestWsEvent.metadata?.motor_id as string);
+      if (targetMotorId) {
         if (latestWsEvent.event_type === 'SCHEDULE_STARTED') {
           setMotors((prev) =>
-            prev.map((m) => (m.id === latestWsEvent.motor_id ? { ...m, status: 'ON' } : m))
+            prev.map((m) => (m.id === targetMotorId ? { ...m, status: 'ON' } : m))
           );
-        } else if (latestWsEvent.event_type === 'SCHEDULE_STOPPED' || latestWsEvent.event_type === 'TIMER_EXPIRED') {
+        } else if (
+          latestWsEvent.event_type === 'SCHEDULE_STOPPED' ||
+          latestWsEvent.event_type === 'TIMER_EXPIRED' ||
+          latestWsEvent.event_type?.includes('STOPPED') ||
+          latestWsEvent.event_type?.includes('EXPIRED')
+        ) {
           setMotors((prev) =>
-            prev.map((m) => (m.id === latestWsEvent.motor_id ? { ...m, status: 'OFF' } : m))
+            prev.map((m) => (m.id === targetMotorId ? { ...m, status: 'OFF' } : m))
           );
+          setMotorTimers((prev) => {
+            const next = { ...prev };
+            delete next[targetMotorId];
+            return next;
+          });
         }
       }
 
-      if (latestWsEvent.motor_id && (latestWsEvent.event_type?.includes('TIMER') || latestWsEvent.event_type?.includes('SCHEDULE'))) {
-        api.getMotorTimer(latestWsEvent.motor_id).then((t) => {
-          if (t && t.is_running) {
-            setMotorTimers((prev) => ({ ...prev, [latestWsEvent.motor_id!]: t }));
+      if (targetMotorId && (latestWsEvent.event_type?.includes('TIMER') || latestWsEvent.event_type?.includes('SCHEDULE'))) {
+        api.getMotorTimer(targetMotorId).then((t) => {
+          if (t && t.is_running && t.remaining_seconds > 0) {
+            setMotorTimers((prev) => ({ ...prev, [targetMotorId]: t }));
+          } else {
+            setMotorTimers((prev) => {
+              const next = { ...prev };
+              delete next[targetMotorId];
+              return next;
+            });
           }
         }).catch(() => {});
       }
