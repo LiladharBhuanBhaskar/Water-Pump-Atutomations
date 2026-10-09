@@ -68,7 +68,16 @@ def helper_create_test_hierarchy():
             password_hash=get_password_hash("Pass@123"),
             is_active=True,
         )
-        session.add_all([admin_user, op_user])
+        viewer_user = User(
+            id=uuid.uuid4(),
+            email=f"viewer_{uuid.uuid4().hex[:6]}@timer.io",
+            name="Timer Viewer",
+            role=UserRole.VIEWER,
+            organization_id=org.id,
+            password_hash=get_password_hash("Pass@123"),
+            is_active=True,
+        )
+        session.add_all([admin_user, op_user, viewer_user])
         session.flush()
 
         site = Site(
@@ -129,6 +138,7 @@ def helper_create_test_hierarchy():
             "org_id": org.id,
             "admin_user_id": admin_user.id,
             "op_user_id": op_user.id,
+            "viewer_user_id": viewer_user.id,
             "site_id": site.id,
             "station_id": station.id,
             "controller_id": controller.id,
@@ -307,12 +317,20 @@ def test_schedules_api_rbac_and_isolation(client: TestClient):
     assert list_resp.status_code == 200
     assert len(list_resp.json()) >= 1
 
-    # 3. STATION_OPERATOR cannot delete schedule (403 Forbidden)
+    # 3. VIEWER cannot delete schedule (403 Forbidden)
+    viewer_token = create_access_token(h["viewer_user_id"], extra_claims={"role": UserRole.VIEWER})
+    del_viewer_resp = client.delete(
+        f"/api/v1/stations/{h['station_id']}/schedules/{created_id}",
+        headers={"Authorization": f"Bearer {viewer_token}"},
+    )
+    assert del_viewer_resp.status_code == 403
+
+    # 4. STATION_OPERATOR has full schedule control and can delete schedule (204 No Content)
     del_resp = client.delete(
         f"/api/v1/stations/{h['station_id']}/schedules/{created_id}",
         headers={"Authorization": f"Bearer {operator_token}"},
     )
-    assert del_resp.status_code == 403
+    assert del_resp.status_code == 204
 
     # 4. IDOR test: Foreign station query returns 404
     foreign_station_id = uuid.uuid4()

@@ -199,19 +199,28 @@ def test_station_settings_rbac_and_isolation(client):
     station1 = helper_create_station(site1.id, "STN_S2", "Station S2")
 
     _, op_token = helper_create_user("op_s2@test.com", UserRole.STATION_OPERATOR, org1.id)
+    _, viewer_token = helper_create_user("view_s2@test.com", UserRole.VIEWER, org1.id)
     _, foreign_admin_token = helper_create_user("for_admin@test.com", UserRole.ORGANIZATION_ADMIN, org2.id)
 
     # Operator can read settings
     res_op_get = client.get(f"/api/v1/stations/{station1.id}/settings", headers={"Authorization": f"Bearer {op_token}"})
     assert res_op_get.status_code == 200
 
-    # Operator cannot update settings (HTTP 403)
+    # Operator can update operational thresholds and settings (HTTP 200)
     res_op_put = client.put(
         f"/api/v1/stations/{station1.id}/settings",
-        json={"auto_stop_on_tank_full": True},
+        json={"auto_stop_on_tank_full": True, "water_level_threshold": 92.0},
         headers={"Authorization": f"Bearer {op_token}"}
     )
-    assert res_op_put.status_code == 403
+    assert res_op_put.status_code == 200
+
+    # Read-only Viewer cannot update settings (HTTP 403)
+    res_viewer_put = client.put(
+        f"/api/v1/stations/{station1.id}/settings",
+        json={"auto_stop_on_tank_full": True},
+        headers={"Authorization": f"Bearer {viewer_token}"}
+    )
+    assert res_viewer_put.status_code == 403
 
     # Foreign tenant receives 404 (IDOR protection)
     res_idor = client.get(f"/api/v1/stations/{station1.id}/settings", headers={"Authorization": f"Bearer {foreign_admin_token}"})
