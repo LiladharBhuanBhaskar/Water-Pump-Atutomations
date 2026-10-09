@@ -202,6 +202,26 @@ async def _run_seed(session: AsyncSession, hashed_password: str):
                     "status": SensorStatus.ACTIVE
                 }
             )
+            s_curr, _ = await get_or_create(
+                session, Sensor,
+                controller_id=controller.id,
+                sensor_code="DEMO-SENSOR-CURRENT-001",
+                defaults={
+                    "name": "Demo Current Sensor",
+                    "sensor_type": SensorType.CURRENT,
+                    "status": SensorStatus.ACTIVE
+                }
+            )
+            s_volt, _ = await get_or_create(
+                session, Sensor,
+                controller_id=controller.id,
+                sensor_code="DEMO-SENSOR-VOLTAGE-001",
+                defaults={
+                    "name": "Demo Voltage Sensor",
+                    "sensor_type": SensorType.VOLTAGE,
+                    "status": SensorStatus.ACTIVE
+                }
+            )
             await session.flush()
             
             # 8. StationSettings
@@ -271,35 +291,105 @@ async def _run_seed(session: AsyncSession, hashed_password: str):
             )
             await session.flush()
             
-            # 10. Telemetry & Events (Deterministic timestamp)
-            base_time = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+            # 10. Fresh Telemetry & Events with current timestamps
+            now_utc = datetime.now(timezone.utc)
+            import uuid
             
-            # Check if telemetry exists for this sensor and base_time to avoid duplicates
-            t_check = await session.execute(select(TelemetryReading).filter_by(sensor_id=s_level.id, occurred_at=base_time))
-            if not t_check.scalars().first():
-                import uuid
-                level_vals = [70.0, 80.0, 90.0, 95.0]
-                for i, val in enumerate(level_vals):
-                    session.add(TelemetryReading(id=uuid.uuid4(), sensor_id=s_level.id, value=val, unit="percent", occurred_at=base_time + timedelta(minutes=i*10)))
-                
-                turb_vals = [2.0, 3.0, 4.0, 6.0]
-                for i, val in enumerate(turb_vals):
-                    session.add(TelemetryReading(id=uuid.uuid4(), sensor_id=s_turb.id, value=val, unit="NTU", occurred_at=base_time + timedelta(minutes=i*10)))
-                
-                flow_vals = [10.0, 12.0, 11.5, 9.5]
-                for i, val in enumerate(flow_vals):
-                    session.add(TelemetryReading(id=uuid.uuid4(), sensor_id=s_flow.id, value=val, unit="L/min", occurred_at=base_time + timedelta(minutes=i*10)))
-                    
-                # Motor Events
-                event_types = [MotorEventType.STARTED, MotorEventType.STOPPED, MotorEventType.STARTED, MotorEventType.STOPPED]
-                for i, ev_type in enumerate(event_types):
-                    session.add(MotorEvent(id=uuid.uuid4(), motor_id=motor1.id, event_type=ev_type, source=MotorEventSource.SYSTEM, occurred_at=base_time + timedelta(minutes=i*10)))
-                    
-                # Motor Commands
-                cmd_types = [CommandType.START, CommandType.STOP]
-                for i, cmd_type in enumerate(cmd_types):
-                    session.add(MotorCommand(id=uuid.uuid4(), motor_id=motor1.id, command_type=cmd_type, requested_by=users[UserRole.STATION_OPERATOR].id, status=CommandStatus.EXECUTED, requested_at=base_time + timedelta(minutes=i*20)))
-                    
+            # Recent live sensor readings
+            session.add(TelemetryReading(id=uuid.uuid4(), sensor_id=s_level.id, value=78.5, unit="percent", occurred_at=now_utc - timedelta(minutes=1)))
+            session.add(TelemetryReading(id=uuid.uuid4(), sensor_id=s_turb.id, value=3.4, unit="NTU", occurred_at=now_utc - timedelta(minutes=1)))
+            session.add(TelemetryReading(id=uuid.uuid4(), sensor_id=s_flow.id, value=48.2, unit="L/min", occurred_at=now_utc - timedelta(minutes=1)))
+            session.add(TelemetryReading(id=uuid.uuid4(), sensor_id=s_curr.id, value=9.4, unit="A", occurred_at=now_utc - timedelta(minutes=1)))
+            session.add(TelemetryReading(id=uuid.uuid4(), sensor_id=s_volt.id, value=232.0, unit="V", occurred_at=now_utc - timedelta(minutes=1)))
+            
+            # Motor 1 Run Cycle 1 (Scheduled - Morning Tank Fill: 30 minutes duration)
+            t_m1_s1_start = now_utc - timedelta(hours=4)
+            t_m1_s1_stop = t_m1_s1_start + timedelta(minutes=30)
+            session.add(MotorEvent(
+                id=uuid.uuid4(),
+                motor_id=motor1.id,
+                event_type=MotorEventType.STARTED,
+                source=MotorEventSource.AUTOMATION,
+                occurred_at=t_m1_s1_start,
+                description="Schedule: Morning Tank Fill",
+                event_payload={"schedule_name": "Morning Tank Fill", "duration_seconds": 1800, "reason": "SCHEDULED_START"}
+            ))
+            session.add(MotorEvent(
+                id=uuid.uuid4(),
+                motor_id=motor1.id,
+                event_type=MotorEventType.STOPPED,
+                source=MotorEventSource.AUTOMATION,
+                occurred_at=t_m1_s1_stop,
+                description="Schedule Completed: Morning Tank Fill",
+                event_payload={"schedule_name": "Morning Tank Fill", "runtime_seconds": 1800, "reason": "SCHEDULE_COMPLETED"}
+            ))
+
+            # Motor 2 Run Cycle 1 (Scheduled - Booster Line Cycle: 20 minutes duration)
+            t_m2_s1_start = now_utc - timedelta(hours=3, minutes=15)
+            t_m2_s1_stop = t_m2_s1_start + timedelta(minutes=20)
+            session.add(MotorEvent(
+                id=uuid.uuid4(),
+                motor_id=motor2.id,
+                event_type=MotorEventType.STARTED,
+                source=MotorEventSource.AUTOMATION,
+                occurred_at=t_m2_s1_start,
+                description="Schedule: Secondary Booster Pressure",
+                event_payload={"schedule_name": "Secondary Booster Pressure", "duration_seconds": 1200, "reason": "SCHEDULED_START"}
+            ))
+            session.add(MotorEvent(
+                id=uuid.uuid4(),
+                motor_id=motor2.id,
+                event_type=MotorEventType.STOPPED,
+                source=MotorEventSource.AUTOMATION,
+                occurred_at=t_m2_s1_stop,
+                description="Schedule Completed: Secondary Booster Pressure",
+                event_payload={"schedule_name": "Secondary Booster Pressure", "runtime_seconds": 1200, "reason": "SCHEDULE_COMPLETED"}
+            ))
+
+            # Motor 1 Run Cycle 2 (Safety Cutoff - Tank Full Auto-Cutoff at 96.5%)
+            t_m1_s2_start = now_utc - timedelta(hours=2)
+            t_m1_s2_stop = t_m1_s2_start + timedelta(minutes=18)
+            session.add(MotorEvent(
+                id=uuid.uuid4(),
+                motor_id=motor1.id,
+                event_type=MotorEventType.STARTED,
+                source=MotorEventSource.AUTOMATION,
+                occurred_at=t_m1_s2_start,
+                description="Automated Level Maintenance Cycle",
+                event_payload={"reason": "AUTOMATED_CYCLE_START", "duration_seconds": 1800}
+            ))
+            session.add(MotorEvent(
+                id=uuid.uuid4(),
+                motor_id=motor1.id,
+                event_type=MotorEventType.STOPPED,
+                source=MotorEventSource.AUTOMATION,
+                occurred_at=t_m1_s2_stop,
+                description="Tank Full Auto-Cutoff (Water Level >= 95%)",
+                event_payload={"reason": "TANK_FULL_AUTO_STOP", "water_level": 96.5, "runtime_seconds": 1080}
+            ))
+
+            # Motor 1 Run Cycle 3 (Manual Start by Operator: 12 minutes duration)
+            t_m1_s3_start = now_utc - timedelta(minutes=45)
+            t_m1_s3_stop = t_m1_s3_start + timedelta(minutes=12)
+            session.add(MotorEvent(
+                id=uuid.uuid4(),
+                motor_id=motor1.id,
+                event_type=MotorEventType.STARTED,
+                source=MotorEventSource.USER,
+                occurred_at=t_m1_s3_start,
+                description="Manual start command by operator",
+                event_payload={"reason": "MANUAL_START", "requested_by": str(users[UserRole.STATION_OPERATOR].id)}
+            ))
+            session.add(MotorEvent(
+                id=uuid.uuid4(),
+                motor_id=motor1.id,
+                event_type=MotorEventType.STOPPED,
+                source=MotorEventSource.USER,
+                occurred_at=t_m1_s3_stop,
+                description="Manual stop command by operator",
+                event_payload={"reason": "MANUAL_STOP", "runtime_seconds": 720}
+            ))
+
             await session.commit()
             
             print("HydraControl demo seed")

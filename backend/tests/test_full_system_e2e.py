@@ -10,9 +10,9 @@ import time
 import uuid
 from typing import Dict, Any
 
-from backend.app.core.security import create_access_token
-from backend.app.services.token_service import token_service
-from backend.app.services.audit_service import sanitize_audit_metadata, SENSITIVE_KEYS
+from app.core.security import create_access_token
+from app.services.token_service import token_service
+from app.services.audit_service import sanitize_audit_metadata, SENSITIVE_KEYS
 
 
 @pytest.mark.asyncio

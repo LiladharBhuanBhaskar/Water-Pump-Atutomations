@@ -123,7 +123,12 @@ async def stream_motor_state(
         "timestamp": iso_ts
     }
 
-    return await hub.broadcast_to_channels(channels, payload)
+    if channels:
+        delivered = await hub.broadcast_to_channels(channels, payload)
+        if delivered == 0:
+            return await hub.broadcast_to_all(payload)
+        return delivered
+    return await hub.broadcast_to_all(payload)
 
 
 async def stream_command_lifecycle(
@@ -150,9 +155,6 @@ async def stream_command_lifecycle(
         device_uid=device_uid
     )
 
-    if not channels:
-        return 0
-
     now = timestamp or datetime.now(timezone.utc)
     iso_ts = now.isoformat() if hasattr(now, "isoformat") else str(now)
 
@@ -170,7 +172,12 @@ async def stream_command_lifecycle(
         "timestamp": iso_ts
     }
 
-    return await hub.broadcast_to_channels(channels, payload)
+    if channels:
+        delivered = await hub.broadcast_to_channels(channels, payload)
+        if delivered == 0:
+            return await hub.broadcast_to_all(payload)
+        return delivered
+    return await hub.broadcast_to_all(payload)
 
 
 async def stream_safety_alert(
@@ -197,9 +204,6 @@ async def stream_safety_alert(
         device_uid=device_uid
     )
 
-    if not channels:
-        return 0
-
     now = timestamp or datetime.now(timezone.utc)
     iso_ts = now.isoformat() if hasattr(now, "isoformat") else str(now)
 
@@ -217,7 +221,12 @@ async def stream_safety_alert(
         "timestamp": iso_ts
     }
 
-    return await hub.broadcast_to_channels(channels, msg)
+    if channels:
+        delivered = await hub.broadcast_to_channels(channels, msg)
+        if delivered == 0:
+            return await hub.broadcast_to_all(msg)
+        return delivered
+    return await hub.broadcast_to_all(msg)
 
 
 async def stream_notification(

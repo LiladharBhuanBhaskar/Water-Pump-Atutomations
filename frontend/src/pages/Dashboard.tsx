@@ -418,6 +418,18 @@ export const Dashboard: React.FC<DashboardProps> = ({ latestWsEvent }) => {
       };
       setSafetyAlerts((prev) => [newAlert, ...prev.slice(0, 5)]);
 
+      if (latestWsEvent.motor_id) {
+        if (latestWsEvent.event_type === 'SCHEDULE_STARTED') {
+          setMotors((prev) =>
+            prev.map((m) => (m.id === latestWsEvent.motor_id ? { ...m, status: 'ON' } : m))
+          );
+        } else if (latestWsEvent.event_type === 'SCHEDULE_STOPPED' || latestWsEvent.event_type === 'TIMER_EXPIRED') {
+          setMotors((prev) =>
+            prev.map((m) => (m.id === latestWsEvent.motor_id ? { ...m, status: 'OFF' } : m))
+          );
+        }
+      }
+
       if (latestWsEvent.motor_id && (latestWsEvent.event_type?.includes('TIMER') || latestWsEvent.event_type?.includes('SCHEDULE'))) {
         api.getMotorTimer(latestWsEvent.motor_id).then((t) => {
           if (t && t.is_running) {

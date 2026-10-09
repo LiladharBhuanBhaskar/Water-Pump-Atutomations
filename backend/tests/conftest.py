@@ -26,12 +26,12 @@ import app.db.session as db_session
 # Configure test engines and session factories
 test_sync_engine = create_engine(
     f"sqlite:///{test_db_path}",
-    connect_args={"check_same_thread": False},
+    connect_args={"check_same_thread": False, "timeout": 30},
     echo=False
 )
 test_async_engine = create_async_engine(
     f"sqlite+aiosqlite:///{test_db_path}",
-    connect_args={"check_same_thread": False},
+    connect_args={"check_same_thread": False, "timeout": 30},
     echo=False
 )
 

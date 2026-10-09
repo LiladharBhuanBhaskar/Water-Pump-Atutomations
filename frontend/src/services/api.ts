@@ -190,9 +190,10 @@ class ApiService {
     return this.request<Motor>(`/motors/${motorId}`);
   }
 
-  async startMotor(motorId: string): Promise<MotorCommand> {
+  async startMotor(motorId: string, payload?: Record<string, any>): Promise<MotorCommand> {
     return this.request<MotorCommand>(`/motors/${motorId}/start`, {
       method: 'POST',
+      body: payload ? JSON.stringify({ payload }) : undefined,
     });
   }
 

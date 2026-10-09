@@ -24,8 +24,8 @@ async_engine_kwargs = {"echo": settings.DEBUG}
 sync_engine_kwargs = {"echo": settings.DEBUG}
 
 if is_sqlite:
-    async_engine_kwargs["connect_args"] = {"check_same_thread": False}
-    sync_engine_kwargs["connect_args"] = {"check_same_thread": False}
+    async_engine_kwargs["connect_args"] = {"check_same_thread": False, "timeout": 30}
+    sync_engine_kwargs["connect_args"] = {"check_same_thread": False, "timeout": 30}
 else:
     # PostgreSQL connection pooling optimizations
     async_engine_kwargs["pool_pre_ping"] = True

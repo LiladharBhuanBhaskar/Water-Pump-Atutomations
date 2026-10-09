@@ -389,7 +389,7 @@ class TimerSchedulerService:
         motor_id: uuid.UUID,
         fallback_time: datetime,
     ) -> datetime:
-        """Finds when the motor entered ON state via latest STARTED MotorEvent."""
+        """Finds when the motor entered ON state via latest active STARTED MotorEvent."""
         stmt = (
             select(MotorEvent)
             .where(
@@ -402,7 +402,23 @@ class TimerSchedulerService:
         res = await session.execute(stmt)
         event = res.scalar_one_or_none()
         if event and event.occurred_at:
-            return ensure_utc(event.occurred_at)
+            # Check if there is a STOP/FAULT event at or after this start event
+            stop_stmt = (
+                select(MotorEvent)
+                .where(
+                    MotorEvent.motor_id == motor_id,
+                    MotorEvent.event_type.in_([
+                        MotorEventType.STOPPED,
+                        MotorEventType.FAULT,
+                        MotorEventType.EMERGENCY_STOP,
+                    ]),
+                    MotorEvent.occurred_at >= event.occurred_at,
+                )
+                .limit(1)
+            )
+            stop_res = await session.execute(stop_stmt)
+            if stop_res.scalar_one_or_none() is None:
+                return ensure_utc(event.occurred_at)
         return ensure_utc(fallback_time)
 
     async def check_and_process_motor_timers(
@@ -511,6 +527,11 @@ class TimerSchedulerService:
                     stop_dispatched = True
                     reason = "TIMER_EXPIRED"
 
+                    meta = self._active_timer_metadata.get(motor.id, {})
+                    sched_name = meta.get("schedule_name")
+                    is_scheduled = bool(sched_name or meta.get("schedule_id"))
+                    stop_reason = "SCHEDULE_COMPLETED" if is_scheduled else "TIMER_EXPIRED"
+
                     # Dispatch authoritative STOP command via command service
                     try:
                         stop_cmd = await dispatch_motor_command(
@@ -519,7 +540,8 @@ class TimerSchedulerService:
                             command_type=CommandType.STOP,
                             user_id=None,
                             payload={
-                                "reason": "TIMER_EXPIRED",
+                                "reason": stop_reason,
+                                "schedule_name": sched_name,
                                 "runtime_seconds": eval_res.elapsed_seconds,
                                 "configured_duration": duration,
                             },
@@ -540,20 +562,28 @@ class TimerSchedulerService:
 
                     self.cancel_motor_timer(motor.id)
 
+                    notif_title = "Scheduled Pump Stopped" if is_scheduled else "Pump Stopped (Timer Ended)"
+                    notif_msg = (
+                        f"Motor {motor.motor_code} has completed schedule '{sched_name}' and is now closed / stopped."
+                        if sched_name else
+                        f"Motor {motor.motor_code} has been automatically stopped because the scheduled duration ended."
+                    )
+
                     try:
                         await notification_service.dispatch_notification(
-                            title="Scheduled Pump Stopped",
-                            message=f"Motor {motor.motor_code} has been automatically stopped because the scheduled duration ended.",
+                            title=notif_title,
+                            message=notif_msg,
                             severity=NotificationSeverity.INFO,
                             channels=[NotificationChannel.IN_APP, NotificationChannel.EMAIL],
                             organization_id=org_id,
                             site_id=site_id,
                             station_id=station_id,
                             motor_id=motor.id,
-                            event_type="TIMER_EXPIRED",
+                            event_type="SCHEDULE_STOPPED" if is_scheduled else "TIMER_EXPIRED",
                             metadata={
                                 "runtime_seconds": eval_res.elapsed_seconds,
                                 "configured_duration": duration,
+                                "schedule_name": sched_name,
                             },
                             bypass_throttle=True,
                         )
