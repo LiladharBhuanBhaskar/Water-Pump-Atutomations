@@ -19,52 +19,46 @@ export const MobileNavDock: React.FC<MobileNavDockProps> = ({
   onPowerToggle,
 }) => {
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-50 flex justify-center pointer-events-none pb-2 px-3">
-      <nav className="bottom-nav-dock pointer-events-auto w-full max-w-md h-18 rounded-[28px] px-4 flex items-center justify-between relative">
+    <div className="fixed bottom-0 left-0 right-0 z-50 flex justify-center pointer-events-none pb-[calc(0.5rem+env(safe-area-inset-bottom,0px))] px-3">
+      <nav className="pointer-events-auto w-full max-w-md h-16 rounded-2xl px-2 flex items-center justify-between relative bg-white border border-slate-200">
         {/* TAB 1: HOME */}
         <button
           type="button"
           onClick={() => onTabChange('HOME')}
-          className={`flex flex-col items-center justify-center flex-1 py-1 transition-all ${
+          className={`flex flex-col items-center justify-center flex-1 py-1 transition-colors cursor-pointer ${
             activeTab === 'HOME'
-              ? 'text-teal-700 font-extrabold'
-              : 'text-slate-400 hover:text-slate-600 font-medium'
+              ? 'text-blue-600 font-bold'
+              : 'text-slate-500 hover:text-slate-700 font-medium'
           }`}
         >
           <div
-            className={`p-1.5 rounded-xl transition-all ${
-              activeTab === 'HOME' ? 'bg-teal-50 text-teal-700' : ''
+            className={`px-3 py-1 rounded-lg transition-colors ${
+              activeTab === 'HOME' ? 'bg-blue-50 text-blue-600' : ''
             }`}
           >
-            <Home className="w-5 h-5" />
+            <Home className="w-5 h-5 fill-current stroke-1" />
           </div>
-          <span className="text-[11px] mt-0.5">Home</span>
-          {activeTab === 'HOME' && (
-            <span className="w-1.5 h-1.5 rounded-full bg-teal-600 mt-0.5" />
-          )}
+          <span className="text-[10px] mt-0.5">Home</span>
         </button>
 
         {/* TAB 2: SCHEDULES */}
         <button
           type="button"
           onClick={() => onTabChange('SCHEDULES')}
-          className={`flex flex-col items-center justify-center flex-1 py-1 transition-all ${
+          className={`flex flex-col items-center justify-center flex-1 py-1 transition-colors cursor-pointer ${
             activeTab === 'SCHEDULES'
-              ? 'text-teal-700 font-extrabold'
-              : 'text-slate-400 hover:text-slate-600 font-medium'
+              ? 'text-blue-600 font-bold'
+              : 'text-slate-500 hover:text-slate-700 font-medium'
           }`}
         >
           <div
-            className={`p-1.5 rounded-xl transition-all ${
-              activeTab === 'SCHEDULES' ? 'bg-teal-50 text-teal-700' : ''
+            className={`px-3 py-1 rounded-lg transition-colors ${
+              activeTab === 'SCHEDULES' ? 'bg-blue-50 text-blue-600' : ''
             }`}
           >
-            <Calendar className="w-5 h-5" />
+            <Calendar className="w-5 h-5 stroke-[2]" />
           </div>
-          <span className="text-[11px] mt-0.5">Schedules</span>
-          {activeTab === 'SCHEDULES' && (
-            <span className="w-1.5 h-1.5 rounded-full bg-teal-600 mt-0.5" />
-          )}
+          <span className="text-[10px] mt-0.5">Schedules</span>
         </button>
 
         {/* CENTER FLOATING POWER BUTTON */}
@@ -74,7 +68,7 @@ export const MobileNavDock: React.FC<MobileNavDockProps> = ({
             onClick={onPowerToggle}
             disabled={isProcessing}
             title={isMotorRunning ? 'Tap to Stop Pump' : 'Tap to Start Pump'}
-            className={`w-14 h-14 rounded-full flex items-center justify-center text-white relative shadow-xl transition-all ${
+            className={`w-14 h-14 rounded-full flex items-center justify-center text-white relative shadow-xl transition-all cursor-pointer ${
               isMotorRunning
                 ? 'floating-power-btn-running animate-ring-pulse'
                 : 'floating-power-btn'
@@ -92,46 +86,40 @@ export const MobileNavDock: React.FC<MobileNavDockProps> = ({
         <button
           type="button"
           onClick={() => onTabChange('HISTORY')}
-          className={`flex flex-col items-center justify-center flex-1 py-1 transition-all ${
+          className={`flex flex-col items-center justify-center flex-1 py-1 transition-colors cursor-pointer ${
             activeTab === 'HISTORY'
-              ? 'text-teal-700 font-extrabold'
-              : 'text-slate-400 hover:text-slate-600 font-medium'
+              ? 'text-blue-600 font-bold'
+              : 'text-slate-500 hover:text-slate-700 font-medium'
           }`}
         >
           <div
-            className={`p-1.5 rounded-xl transition-all ${
-              activeTab === 'HISTORY' ? 'bg-teal-50 text-teal-700' : ''
+            className={`px-3 py-1 rounded-lg transition-colors ${
+              activeTab === 'HISTORY' ? 'bg-blue-50 text-blue-600' : ''
             }`}
           >
-            <BarChart2 className="w-5 h-5" />
+            <BarChart2 className="w-5 h-5 stroke-[2]" />
           </div>
-          <span className="text-[11px] mt-0.5">History</span>
-          {activeTab === 'HISTORY' && (
-            <span className="w-1.5 h-1.5 rounded-full bg-teal-600 mt-0.5" />
-          )}
+          <span className="text-[10px] mt-0.5">History</span>
         </button>
 
         {/* TAB 4: SETTINGS */}
         <button
           type="button"
           onClick={() => onTabChange('SETTINGS')}
-          className={`flex flex-col items-center justify-center flex-1 py-1 transition-all ${
+          className={`flex flex-col items-center justify-center flex-1 py-1 transition-colors cursor-pointer ${
             activeTab === 'SETTINGS'
-              ? 'text-teal-700 font-extrabold'
-              : 'text-slate-400 hover:text-slate-600 font-medium'
+              ? 'text-blue-600 font-bold'
+              : 'text-slate-500 hover:text-slate-700 font-medium'
           }`}
         >
           <div
-            className={`p-1.5 rounded-xl transition-all ${
-              activeTab === 'SETTINGS' ? 'bg-teal-50 text-teal-700' : ''
+            className={`px-3 py-1 rounded-lg transition-colors ${
+              activeTab === 'SETTINGS' ? 'bg-blue-50 text-blue-600' : ''
             }`}
           >
-            <Settings className="w-5 h-5" />
+            <Settings className="w-5 h-5 stroke-[2]" />
           </div>
-          <span className="text-[11px] mt-0.5">Settings</span>
-          {activeTab === 'SETTINGS' && (
-            <span className="w-1.5 h-1.5 rounded-full bg-teal-600 mt-0.5" />
-          )}
+          <span className="text-[10px] mt-0.5">Settings</span>
         </button>
       </nav>
     </div>
