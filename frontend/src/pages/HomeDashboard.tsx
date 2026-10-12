@@ -2,30 +2,25 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   Waves,
   Droplet,
-  Gauge,
   Shield,
-  Zap,
-  Activity,
-  Clock,
   RefreshCw,
-  Plus,
   AlertTriangle,
   CheckCircle2,
   Calendar,
   LogOut,
   Bell,
   Cpu,
-  Timer,
-  FastForward,
-  Square,
-  Sliders,
-  History,
-  Play,
-  Pause,
-  Trash2,
   Save,
   SlidersHorizontal,
   Crown,
+  ChevronRight,
+  BarChart2,
+  Trash2,
+  Timer,
+  FastForward,
+  Square,
+  Plus,
+  Sliders,
 } from 'lucide-react';
 import {
   Site,
@@ -38,7 +33,6 @@ import {
   MotorTimerStatus,
 } from '../types';
 import { api } from '../services/api';
-import { ws } from '../services/ws';
 import { useAuth } from '../context/AuthContext';
 import { MobileNavDock, MobileTab } from '../components/MobileNavDock';
 import { ScheduleManagerModal } from '../components/ScheduleManagerModal';
@@ -48,7 +42,44 @@ import { StartMotorModal } from '../components/StartMotorModal';
 import { UserSubscriptionAdminModal } from '../components/UserSubscriptionAdminModal';
 import { audioAlert } from '../utils/audioAlert';
 
-interface PumpRunSession {
+// Dedicated Service Detail Screens
+import { MotorSelectionScreen } from '../components/service-views/MotorSelectionScreen';
+import { InterlocksScreen } from '../components/service-views/InterlocksScreen';
+import { TankLevelScreen } from '../components/service-views/TankLevelScreen';
+import { SumpLevelScreen } from '../components/service-views/SumpLevelScreen';
+import { FlowRateScreen } from '../components/service-views/FlowRateScreen';
+import { WaterQualityScreen } from '../components/service-views/WaterQualityScreen';
+import { ElectricalLoadScreen } from '../components/service-views/ElectricalLoadScreen';
+import { SchedulesScreen } from '../components/service-views/SchedulesScreen';
+import { LatestEventsScreen } from '../components/service-views/LatestEventsScreen';
+import { BcssAccountScreen } from '../components/service-views/BcssAccountScreen';
+import {
+  MotorIcon,
+  InterlockIcon,
+  TankLevelIcon,
+  SumpLevelIcon,
+  FlowRateIcon,
+  WaterQualityIcon,
+  ElectricalLoadIcon,
+  PumpScheduleIcon,
+  LatestEventIcon,
+  WalletCardIcon,
+} from '../components/ServiceIcons';
+
+export type ServiceViewType =
+  | 'SELECT_MOTOR'
+  | 'INTERLOCKS'
+  | 'TANK_LEVEL'
+  | 'SUMP_LEVEL'
+  | 'FLOW_RATE'
+  | 'WATER_QUALITY'
+  | 'ELECTRICAL_LOAD'
+  | 'SCHEDULES'
+  | 'LATEST_EVENT'
+  | 'BCSS_ACCOUNT'
+  | null;
+
+export interface PumpRunSession {
   id: string;
   motorId: string;
   motorCode: string;
@@ -76,7 +107,7 @@ interface PumpRunSession {
   stopReasonDetails?: string;
 }
 
-function formatDurationSecs(seconds: number): string {
+export function formatDurationSecs(seconds: number): string {
   if (!seconds || seconds <= 0) return '0s';
   const m = Math.floor(seconds / 60);
   const s = Math.floor(seconds % 60);
@@ -115,6 +146,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
 }) => {
   const { user, logout, isOperator } = useAuth();
   const [activeTab, setActiveTab] = useState<MobileTab>('HOME');
+  const [activeServiceScreen, setActiveServiceScreen] = useState<ServiceViewType>(null);
 
   const [site, setSite] = useState<Site | null>(null);
   const [station, setStation] = useState<Station | null>(null);
@@ -125,16 +157,16 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
   const [schedules, setSchedules] = useState<ScheduleResponse[]>([]);
   const [activeTimer, setActiveTimer] = useState<MotorTimerStatus | null>(null);
   const [remainingSeconds, setRemainingSeconds] = useState<number>(0);
-  const [isExtending, setIsExtending] = useState<boolean>(false);
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState<boolean>(false);
   const [isNotificationModalOpen, setIsNotificationModalOpen] = useState<boolean>(false);
   const [isCommissionModalOpen, setIsCommissionModalOpen] = useState<boolean>(false);
   const [isStartModalOpen, setIsStartModalOpen] = useState<boolean>(false);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  const [isExtending, setIsExtending] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Station Operational Settings & Thresholds (Full Operator Control)
+  // Station Operational Settings & Thresholds
   const [tankStopThreshold, setTankStopThreshold] = useState<number>(95);
   const [sumpDryRunThreshold, setSumpDryRunThreshold] = useState<number>(10);
   const [turbidityStopThreshold, setTurbidityStopThreshold] = useState<number>(25);
@@ -154,7 +186,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
   // Live telemetry state
   const [tankLevel, setTankLevel] = useState<number>(75.0);
   const [sumpLevel, setSumpLevel] = useState<number>(85.0);
-  const [waterHeadMeters, setWaterHeadMeters] = useState<number>(24.5);
+  const [waterHeadMeters, _setWaterHeadMeters] = useState<number>(24.5);
   const [flowRateLpm, setFlowRateLpm] = useState<number>(0.0);
   const [turbidity, setTurbidity] = useState<number>(6.0);
   const [ph, setPh] = useState<number>(7.2);
@@ -162,7 +194,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
   const [voltage, setVoltage] = useState<number>(230.0);
   const [powerKw, setPowerKw] = useState<number>(0.0);
 
-  // Hierarchy Refs for zero-latency caching
+  // Hierarchy Refs
   const siteRef = React.useRef<Site | null>(null);
   const stationRef = React.useRef<Station | null>(null);
   const controllerRef = React.useRef<Controller | null>(null);
@@ -171,7 +203,6 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
   const isFetchingRef = React.useRef<boolean>(false);
   const debounceSyncRef = React.useRef<any>(null);
 
-  // Keep refs in sync with state
   useEffect(() => {
     siteRef.current = site;
   }, [site]);
@@ -188,10 +219,9 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
     motorRef.current = motor;
   }, [motor]);
 
-  // Derived state
   const isMotorRunning = motor?.status === 'ON';
 
-  // High-performance background sync with smart hierarchy caching
+  // High-performance background sync
   const loadData = useCallback(async (showVisualSpinner = false) => {
     if (isFetchingRef.current) return;
     isFetchingRef.current = true;
@@ -203,7 +233,6 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
       let curController = controllerRef.current;
       let curMotors = motorsListRef.current;
 
-      // 1. Initial Hierarchy Discovery (only executed once if not already cached)
       if (!curSite || !curStation || !curController || curMotors.length === 0) {
         const sites = await api.getSites();
         if (!sites || sites.length === 0) return;
@@ -238,7 +267,6 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
       const activeTarget = motorRef.current || curMotors[0];
       const targetMotorId = activeTarget?.id;
 
-      // 2. Parallel fetch only dynamic runtime metrics
       const [eventsRes, wqRes, schedRes, elecRes, flowRes, timerRes, settingsRes] =
         await Promise.allSettled([
           curStation
@@ -254,12 +282,10 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
           curStation ? api.getStationSettings(curStation.id) : Promise.resolve(null),
         ]);
 
-      // 1. Process Event History
       if (eventsRes.status === 'fulfilled' && eventsRes.value) {
         setRecentEvents(eventsRes.value);
       }
 
-      // 2. Process Water Quality
       if (wqRes.status === 'fulfilled' && wqRes.value) {
         if (wqRes.value.turbidity_ntu !== undefined && wqRes.value.turbidity_ntu !== null) {
           setTurbidity(wqRes.value.turbidity_ntu);
@@ -269,12 +295,10 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
         }
       }
 
-      // 3. Process Schedules
       if (schedRes.status === 'fulfilled' && schedRes.value) {
         setSchedules(schedRes.value);
       }
 
-      // 4. Process Electrical Metrics
       if (elecRes.status === 'fulfilled' && elecRes.value) {
         if (elecRes.value.current_a !== undefined && elecRes.value.current_a !== null) {
           setCurrentAmps(elecRes.value.current_a);
@@ -287,14 +311,12 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
         }
       }
 
-      // 5. Process Flow Diagnostics
       if (flowRes.status === 'fulfilled' && flowRes.value) {
         if (flowRes.value.flow_rate_lpm !== undefined && flowRes.value.flow_rate_lpm !== null) {
           setFlowRateLpm(flowRes.value.flow_rate_lpm);
         }
       }
 
-      // 6. Process Station Settings & Thresholds
       if (settingsRes.status === 'fulfilled' && settingsRes.value) {
         const s = settingsRes.value;
         if (s.water_level_threshold !== undefined && s.water_level_threshold !== null) {
@@ -303,40 +325,34 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
         if (s.turbidity_threshold !== undefined && s.turbidity_threshold !== null) {
           setTurbidityStopThreshold(s.turbidity_threshold);
         }
-        if (s.auto_stop_on_tank_full !== undefined) {
-          setAutoStopTankFull(s.auto_stop_on_tank_full);
+        if (s.auto_stop_on_tank_full !== undefined && s.auto_stop_on_tank_full !== null) {
+          setAutoStopTankFull(Boolean(s.auto_stop_on_tank_full));
         }
-        if (s.offline_alert_enabled !== undefined) {
-          setOfflineAlertEnabled(s.offline_alert_enabled);
+        if (s.offline_alert_enabled !== undefined && s.offline_alert_enabled !== null) {
+          setOfflineAlertEnabled(Boolean(s.offline_alert_enabled));
         }
       }
 
-      // 7. Process Active Timer
       if (timerRes.status === 'fulfilled' && timerRes.value) {
-        const timerVal = timerRes.value;
-        if (timerVal.is_running && timerVal.remaining_seconds > 0) {
-          setActiveTimer(timerVal);
-          setRemainingSeconds(Math.max(0, Math.round(timerVal.remaining_seconds)));
+        const timerData = timerRes.value;
+        setActiveTimer(timerData);
+        if (timerData.is_running && timerData.remaining_seconds !== undefined) {
+          setRemainingSeconds(Math.max(0, Math.round(timerData.remaining_seconds)));
         } else {
-          setActiveTimer(null);
           setRemainingSeconds(0);
-          if (timerVal.status === 'OFF' || !timerVal.is_running) {
-            setMotor((prev) => (prev && prev.status === 'ON' && !timerVal.is_running ? { ...prev, status: 'OFF' } : prev));
-            setMotorsList((prev) =>
-              prev.map((m) => (m.id === targetMotorId && !timerVal.is_running ? { ...m, status: 'OFF' } : m))
-            );
-          }
         }
+      } else {
+        setActiveTimer(null);
+        setRemainingSeconds(0);
       }
-    } catch {
-      // Silent non-blocking fallback
+    } catch (err) {
+      console.error('Failed to load station telemetry:', err);
     } finally {
       isFetchingRef.current = false;
       if (showVisualSpinner) setIsSyncing(false);
     }
   }, []);
 
-  // Debounced non-blocking scheduler sync
   const debouncedSync = useCallback((delay = 300) => {
     if (debounceSyncRef.current) clearTimeout(debounceSyncRef.current);
     debounceSyncRef.current = setTimeout(() => {
@@ -344,375 +360,13 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
     }, delay);
   }, [loadData]);
 
-  // Handle Switching Active Motor Unit
-  const handleSelectMotor = async (selected: Motor) => {
-    if (motor?.id === selected.id) return;
-    setMotor(selected);
-    setIsSyncing(true);
-    try {
-      const [timerRes, eventsRes, elecRes, flowRes] = await Promise.allSettled([
-        api.getMotorTimer(selected.id),
-        station
-          ? api.getStationEvents(station.id, { limit: 100 })
-          : api.getMotorEvents(selected.id, { limit: 100 }),
-        api.getElectricalMetrics(selected.id),
-        api.getFlowDiagnostics(selected.id),
-      ]);
-
-      if (timerRes.status === 'fulfilled' && timerRes.value && timerRes.value.is_running) {
-        setActiveTimer(timerRes.value);
-        setRemainingSeconds(Math.max(0, Math.round(timerRes.value.remaining_seconds)));
-      } else {
-        setActiveTimer(null);
-        setRemainingSeconds(0);
-      }
-
-      if (eventsRes.status === 'fulfilled' && eventsRes.value) {
-        setRecentEvents(eventsRes.value);
-      }
-
-      if (elecRes.status === 'fulfilled' && elecRes.value) {
-        if (elecRes.value.current_a !== undefined && elecRes.value.current_a !== null) {
-          setCurrentAmps(elecRes.value.current_a);
-        }
-        if (elecRes.value.voltage_v !== undefined && elecRes.value.voltage_v !== null) {
-          setVoltage(elecRes.value.voltage_v);
-        }
-        if (elecRes.value.power_kw !== undefined && elecRes.value.power_kw !== null) {
-          setPowerKw(elecRes.value.power_kw);
-        }
-      }
-
-      if (flowRes.status === 'fulfilled' && flowRes.value) {
-        if (flowRes.value.flow_rate_lpm !== undefined && flowRes.value.flow_rate_lpm !== null) {
-          setFlowRateLpm(flowRes.value.flow_rate_lpm);
-        }
-      }
-
-      setToastMessage(`Switched active control to ${selected.name} (${selected.motor_code})`);
-      setTimeout(() => setToastMessage(null), 2500);
-    } catch {
-      // non-blocking fallback
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
-  // Derive pump run sessions from event history
-  const runSessions: PumpRunSession[] = React.useMemo(() => {
-    const sessions: PumpRunSession[] = [];
-    const eventsByMotor: Record<string, MotorEventResponse[]> = {};
-
-    // Group events by motor_id
-    recentEvents.forEach((ev) => {
-      const mId = ev.motor_id || (motor ? motor.id : 'default-motor');
-      if (!eventsByMotor[mId]) eventsByMotor[mId] = [];
-      eventsByMotor[mId].push(ev);
-    });
-
-    Object.keys(eventsByMotor).forEach((mId) => {
-      const mEvents = [...eventsByMotor[mId]].sort(
-        (a, b) => parseIsoDate(a.occurred_at).getTime() - parseIsoDate(b.occurred_at).getTime()
-      );
-      const motorObj = motorsList.find((m) => m.id === mId) || (motor?.id === mId ? motor : null);
-      const mCode = motorObj?.motor_code || 'DEMO-MOTOR-001';
-      const mName = motorObj?.name || 'Water Pump';
-
-      for (let i = 0; i < mEvents.length; i++) {
-        const ev = mEvents[i];
-        if (ev.event_type === 'STARTED') {
-          const nextStop = mEvents
-            .slice(i + 1)
-            .find(
-              (e) =>
-                e.event_type === 'STOPPED' ||
-                e.event_type === 'FAULT' ||
-                e.event_type === 'EMERGENCY_STOP'
-            );
-          const isCurrentlyRunning =
-            !nextStop && (motorObj?.status === 'ON' || motorObj?.status === 'STARTING');
-
-          let durSecs = 0;
-          let stopTime: string | null = null;
-          let sessionStatus: 'COMPLETED' | 'RUNNING' | 'TRIPPED' = 'COMPLETED';
-
-          if (nextStop) {
-            stopTime = nextStop.occurred_at;
-            const diffSecs = Math.max(
-              1,
-              Math.round(
-                (parseIsoDate(nextStop.occurred_at).getTime() - parseIsoDate(ev.occurred_at).getTime()) /
-                  1000
-              )
-            );
-            durSecs = nextStop.event_payload?.runtime_seconds || diffSecs;
-            sessionStatus =
-              nextStop.event_type === 'FAULT' || nextStop.event_type === 'EMERGENCY_STOP'
-                ? 'TRIPPED'
-                : 'COMPLETED';
-          } else if (isCurrentlyRunning) {
-            stopTime = null;
-            durSecs = Math.max(
-              1,
-              Math.round((Date.now() - parseIsoDate(ev.occurred_at).getTime()) / 1000)
-            );
-            sessionStatus = 'RUNNING';
-          } else {
-            durSecs = ev.event_payload?.duration_seconds || 1800;
-            stopTime = new Date(parseIsoDate(ev.occurred_at).getTime() + durSecs * 1000).toISOString();
-            sessionStatus = 'COMPLETED';
-          }
-
-          let trigger: 'SCHEDULED' | 'MANUAL' | 'PROTECTION' | 'SYSTEM' = 'MANUAL';
-          const desc = (ev.description || '').toLowerCase();
-          const payloadStr = JSON.stringify(ev.event_payload || {}).toLowerCase();
-          if (
-            ev.source === 'AUTOMATION' ||
-            desc.includes('schedule') ||
-            payloadStr.includes('schedule') ||
-            payloadStr.includes('timer')
-          ) {
-            trigger = 'SCHEDULED';
-          } else if (
-            ev.source === 'USER' ||
-            desc.includes('manual') ||
-            payloadStr.includes('manual')
-          ) {
-            trigger = 'MANUAL';
-          } else if (desc.includes('safety') || desc.includes('trip') || desc.includes('fault')) {
-            trigger = 'PROTECTION';
-          } else {
-            trigger = 'SCHEDULED';
-          }
-
-          const schedName =
-            ev.event_payload?.schedule_name ||
-            (desc.includes('schedule') ? ev.description?.replace(/^Schedule:\s*/i, '') : undefined);
-
-          // Calculate precise reason why motor closed/stopped
-          let stopReason = 'Normal Stop';
-          let stopReasonCat: PumpRunSession['stopReasonCategory'] = 'NORMAL';
-          let stopReasonDetails = 'Motor cycle ended';
-
-          if (isCurrentlyRunning) {
-            stopReason = 'Currently Running / Active';
-            stopReasonCat = 'RUNNING';
-            stopReasonDetails = 'Motor is actively running and pumping water in real-time.';
-          } else if (nextStop) {
-            const stopDesc = (nextStop.description || '').toLowerCase();
-            const stopPayload = nextStop.event_payload || {};
-            const stopReasonCode = String(stopPayload.reason || '').toUpperCase();
-            const stopPayloadStr = JSON.stringify(stopPayload).toLowerCase();
-
-            if (
-              nextStop.event_type === 'EMERGENCY_STOP' ||
-              stopReasonCode.includes('EMERGENCY') ||
-              stopDesc.includes('emergency')
-            ) {
-              stopReasonCat = 'EMERGENCY_STOP';
-              stopReason = 'Emergency Stop Activated';
-              stopReasonDetails =
-                nextStop.description || 'Immediate emergency safety stop command engaged.';
-            } else if (
-              stopReasonCode.includes('TANK_FULL') ||
-              stopDesc.includes('tank full') ||
-              stopDesc.includes('overhead tank') ||
-              stopPayloadStr.includes('tank_full')
-            ) {
-              stopReasonCat = 'TANK_FULL';
-              const lvl = stopPayload.water_level || stopPayload.level;
-              stopReason = lvl ? `Tank Full Auto-Cutoff (${lvl}%)` : 'Tank Full Auto-Cutoff';
-              stopReasonDetails =
-                'Overhead storage tank reached high capacity threshold (>=95%). Auto-stopped to prevent overflow.';
-            } else if (
-              stopReasonCode.includes('TURBIDITY') ||
-              stopDesc.includes('turbidity') ||
-              stopPayloadStr.includes('turbidity')
-            ) {
-              stopReasonCat = 'TURBIDITY';
-              const ntu = stopPayload.turbidity || stopPayload.value;
-              stopReason = ntu
-                ? `Turbidity Cutoff (${ntu} NTU)`
-                : 'Turbidity Cutoff (Water Quality Protection)';
-              stopReasonDetails =
-                'Water turbidity exceeded purity safety limit (> 5.0 NTU). Pump auto-isolated.';
-            } else if (
-              stopReasonCode.includes('DRY_RUN') ||
-              stopDesc.includes('dry run') ||
-              stopDesc.includes('low flow') ||
-              stopPayloadStr.includes('dry_run')
-            ) {
-              stopReasonCat = 'DRY_RUN';
-              stopReason = 'Dry-Run Protection Trip';
-              stopReasonDetails =
-                'No water flow detected during motor run. Pump tripped to prevent motor overheating.';
-            } else if (
-              nextStop.event_type === 'FAULT' ||
-              (nextStop.source as string) === 'SAFETY_INTERLOCK' ||
-              stopReasonCode.includes('FAULT') ||
-              stopDesc.includes('fault') ||
-              stopDesc.includes('trip')
-            ) {
-              stopReasonCat = 'FAULT';
-              stopReason = nextStop.description || 'Safety Interlock / Fault Cutoff';
-              stopReasonDetails =
-                'Safety interlock or electrical protection trip engaged.';
-            } else if (
-              stopReasonCode === 'TIMER_EXPIRED' ||
-              stopReasonCode === 'SCHEDULE_COMPLETED' ||
-              stopDesc.includes('timer expired') ||
-              stopDesc.includes('schedule completed') ||
-              (nextStop.source === 'AUTOMATION' && (schedName || trigger === 'SCHEDULED'))
-            ) {
-              stopReasonCat = 'SCHEDULE_END';
-              stopReason = schedName
-                ? `Schedule Finished: ${schedName}`
-                : 'Timer / Scheduled Duration Completed';
-              stopReasonDetails = `Target run time (${formatDurationSecs(
-                durSecs
-              )}) elapsed normally. Auto-shutdown complete.`;
-            } else if (
-              nextStop.source === 'USER' ||
-              stopReasonCode === 'MANUAL_STOP' ||
-              stopDesc.includes('manual') ||
-              stopDesc.includes('operator')
-            ) {
-              stopReasonCat = 'MANUAL_STOP';
-              stopReason = 'Manual Operator Stop';
-              stopReasonDetails = 'Pump was stopped manually from dashboard or physical switch.';
-            } else {
-              if (trigger === 'SCHEDULED' || schedName) {
-                stopReasonCat = 'SCHEDULE_END';
-                stopReason = schedName ? `Schedule Concluded: ${schedName}` : 'Schedule Auto-Stop';
-                stopReasonDetails = 'Target scheduled cycle completed.';
-              } else {
-                stopReasonCat = 'MANUAL_STOP';
-                stopReason = nextStop.description || 'Normal Shutdown';
-                stopReasonDetails = 'Motor cycle ended.';
-              }
-            }
-          } else {
-            if (trigger === 'SCHEDULED' || schedName) {
-              stopReasonCat = 'SCHEDULE_END';
-              stopReason = schedName ? `Schedule Completed: ${schedName}` : 'Schedule Completed';
-              stopReasonDetails = 'Automated schedule cycle completed.';
-            } else {
-              stopReasonCat = 'MANUAL_STOP';
-              stopReason = 'Cycle Completed';
-              stopReasonDetails = 'Operation cycle concluded.';
-            }
-          }
-
-          sessions.push({
-            id: `session-${ev.id}`,
-            motorId: mId,
-            motorCode: mCode,
-            motorName: mName,
-            startTime: ev.occurred_at,
-            stopTime: stopTime,
-            durationSeconds: durSecs,
-            triggerType: trigger,
-            scheduleName: schedName,
-            description: ev.description || undefined,
-            isRunning: isCurrentlyRunning,
-            status: sessionStatus,
-            stopReason: stopReason,
-            stopReasonCategory: stopReasonCat,
-            stopReasonDetails: stopReasonDetails,
-          });
-        }
-      }
-    });
-
-    // Fallback: If no paired started events exist yet but we have active motor
-    if (sessions.length === 0 && (motor?.status === 'ON' || motor?.status === 'STARTING')) {
-      sessions.push({
-        id: 'active-session-now',
-        motorId: motor.id,
-        motorCode: motor.motor_code,
-        motorName: motor.name,
-        startTime: activeTimer?.started_at || new Date().toISOString(),
-        stopTime: null,
-        durationSeconds: activeTimer?.elapsed_seconds || 120,
-        triggerType: activeTimer?.source === 'SCHEDULED' ? 'SCHEDULED' : 'MANUAL',
-        scheduleName: activeTimer?.schedule_name || undefined,
-        description: 'Currently Active Pump Run',
-        isRunning: true,
-        status: 'RUNNING',
-        stopReason: 'Currently Running / Active',
-        stopReasonCategory: 'RUNNING',
-        stopReasonDetails: 'Motor is actively pumping water in real time.',
-      });
-    }
-
-    return sessions.sort(
-      (a, b) => parseIsoDate(b.startTime).getTime() - parseIsoDate(a.startTime).getTime()
-    );
-  }, [recentEvents, motorsList, motor, activeTimer]);
-
-  // Aggregate Metrics for History Dashboard
-  const historyMetrics = React.useMemo(() => {
-    let totalSecs = 0;
-    let scheduledSecs = 0;
-    let scheduledCount = 0;
-    let manualSecs = 0;
-    let manualCount = 0;
-
-    runSessions.forEach((s) => {
-      totalSecs += s.durationSeconds;
-      if (s.triggerType === 'SCHEDULED') {
-        scheduledSecs += s.durationSeconds;
-        scheduledCount += 1;
-      } else if (s.triggerType === 'MANUAL') {
-        manualSecs += s.durationSeconds;
-        manualCount += 1;
-      }
-    });
-
-    return {
-      totalFormatted: formatDurationSecs(totalSecs),
-      scheduledCount,
-      scheduledFormatted: formatDurationSecs(scheduledSecs),
-      manualCount,
-      manualFormatted: formatDurationSecs(manualSecs),
-    };
-  }, [runSessions]);
-
-  // Filtered Sessions
-  const filteredSessions = React.useMemo(() => {
-    return runSessions.filter((s) => {
-      if (historyMotorFilter !== 'ALL' && s.motorId !== historyMotorFilter) return false;
-      if (historyTypeFilter !== 'ALL' && s.triggerType !== historyTypeFilter) return false;
-      return true;
-    });
-  }, [runSessions, historyMotorFilter, historyTypeFilter]);
-
-  // Filtered Raw Events
-  const filteredEvents = React.useMemo(() => {
-    return recentEvents.filter((ev) => {
-      if (historyMotorFilter !== 'ALL' && ev.motor_id !== historyMotorFilter) return false;
-      return true;
-    });
-  }, [recentEvents, historyMotorFilter]);
-
   useEffect(() => {
-    loadData();
-  }, [loadData]);
-
-  // Subscribe to active station channel for instantaneous real-time history & command updates
-  useEffect(() => {
-    if (station?.id) {
-      ws.subscribeChannels([`station:${station.id}`]);
-    }
-  }, [station?.id]);
-
-  // Periodic background real-time sync (every 3 seconds) ensuring History is always live without page refresh
-  useEffect(() => {
+    loadData(false);
     const interval = setInterval(() => {
-      debouncedSync(0);
-    }, 3000);
+      loadData(false);
+    }, 5000);
     return () => clearInterval(interval);
-  }, [debouncedSync]);
+  }, [loadData]);
 
   // Real-time Countdown Synchronizer
   useEffect(() => {
@@ -726,7 +380,12 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
       const diff = Math.max(0, Math.floor((target - now) / 1000));
       setRemainingSeconds(diff);
 
-      // When scheduled session reaches final time (0), immediately close motor and switch power button back to START
+      // 1-minute warning sound
+      if (diff <= 60 && diff > 0 && !activeTimer.is_warning_active) {
+        audioAlert.testSound('WARNING');
+      }
+
+      // When scheduled session reaches 0, close motor
       if (diff <= 0) {
         setActiveTimer(null);
         setRemainingSeconds(0);
@@ -734,6 +393,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
         setMotorsList((prev) =>
           prev.map((m) => (m.id === motor?.id ? { ...m, status: 'OFF' } : m))
         );
+        audioAlert.testSound('INFO');
         debouncedSync(100);
       }
     };
@@ -742,108 +402,38 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
     return () => clearInterval(interval);
   }, [activeTimer, motor?.status, motor?.id, debouncedSync]);
 
-  // Live WebSocket updates
+  // Handle WebSocket updates
   useEffect(() => {
     if (!latestWsEvent) return;
 
-    if (latestWsEvent.event === 'NOTIFICATION_RECEIVED') {
-      const isWarning = latestWsEvent.event_type?.includes('WARNING') || latestWsEvent.severity === 'WARNING';
-      audioAlert.playBuzzer(latestWsEvent.notification_id, isWarning ? 'WARNING' : latestWsEvent.severity);
-      setToastMessage(`${latestWsEvent.title}: ${latestWsEvent.message}`);
-      setTimeout(() => setToastMessage(null), 4000);
-
-      setRecentEvents((prev) => [
-        {
-          id: latestWsEvent.notification_id,
-          motor_id: latestWsEvent.motor_id || (motor?.id || ''),
-          event_type: (latestWsEvent.event_type as any) || 'NOTIFICATION',
-          source: 'SYSTEM',
-          occurred_at: latestWsEvent.timestamp,
-          created_at: latestWsEvent.timestamp,
-          description: `${latestWsEvent.title}: ${latestWsEvent.message}`,
-          metadata: latestWsEvent.metadata,
-        },
-        ...prev.slice(0, 10),
-      ]);
-
-      const targetId = latestWsEvent.motor_id || (latestWsEvent.metadata?.motor_id as string);
-      if (latestWsEvent.event_type === 'SCHEDULE_STARTED') {
-        setMotor((prev) => (prev && (!targetId || prev.id === targetId) ? { ...prev, status: 'ON' } : prev));
-        setMotorsList((prev) =>
-          prev.map((m) => (!targetId || m.id === targetId ? { ...m, status: 'ON' } : m))
-        );
-        debouncedSync(200);
-      } else if (
-        latestWsEvent.event_type === 'SCHEDULE_STOPPED' ||
-        latestWsEvent.event_type === 'TIMER_EXPIRED' ||
-        latestWsEvent.event_type?.includes('STOPPED') ||
-        latestWsEvent.event_type?.includes('EXPIRED')
-      ) {
-        setMotor((prev) => (prev && (!targetId || prev.id === targetId) ? { ...prev, status: 'OFF' } : prev));
-        setMotorsList((prev) =>
-          prev.map((m) => (!targetId || m.id === targetId ? { ...m, status: 'OFF' } : m))
-        );
-        setActiveTimer(null);
-        setRemainingSeconds(0);
-        debouncedSync(100);
-      } else if (
-        latestWsEvent.event_type?.includes('SCHEDULE') ||
-        latestWsEvent.event_type?.includes('TIMER')
-      ) {
-        debouncedSync(200);
-      }
-    } else if (latestWsEvent.event === 'SAFETY_ALERT') {
-      audioAlert.playBuzzer(latestWsEvent.timestamp, 'CRITICAL');
-      setToastMessage(`Safety Alert: ${latestWsEvent.description || latestWsEvent.event_type}`);
-      setTimeout(() => setToastMessage(null), 4000);
-      debouncedSync(200);
-    } else if (latestWsEvent.event === 'TELEMETRY') {
-      const code = (latestWsEvent.sensor_code || '').toLowerCase();
-      const val = latestWsEvent.value;
-
-      if (code.includes('level') || code.includes('tank')) {
-        setTankLevel(val);
-        setWaterHeadMeters(+(val * 0.32).toFixed(1));
-      } else if (code.includes('sump') || code.includes('source')) {
-        setSumpLevel(val);
-      } else if (code.includes('flow')) {
-        setFlowRateLpm(val);
-      } else if (code.includes('turbidity')) {
-        setTurbidity(val);
-      } else if (code.includes('current')) {
-        setCurrentAmps(val);
-        setPowerKw(+((val * voltage * 0.85) / 1000).toFixed(2));
-      } else if (code.includes('voltage')) {
-        setVoltage(val);
-      }
-    } else if (latestWsEvent.event === 'MOTOR_STATE') {
-      const targetId = latestWsEvent.motor_id;
-      const newStatus = latestWsEvent.status;
-      if (!motor || targetId === motor.id) {
-        setMotor((prev) => (prev ? { ...prev, status: newStatus } : null));
-        if (newStatus === 'OFF' || (newStatus as string) === 'STOPPED') {
-          setActiveTimer(null);
-          setRemainingSeconds(0);
+    const ev = latestWsEvent as any;
+    if (ev.event === 'TELEMETRY' || ev.event === 'MOTOR_STATE' || ev.type === 'TELEMETRY_UPDATED') {
+      const payload = ev.payload || ev || {};
+      if (payload.motor_id && motorRef.current && payload.motor_id === motorRef.current.id) {
+        if (payload.status) {
+          setMotor((prev) => (prev ? { ...prev, status: payload.status } : null));
         }
       }
-      setMotorsList((prev) =>
-        prev.map((m) => (m.id === targetId ? { ...m, status: newStatus } : m))
-      );
-      if (newStatus === 'OFF' || (newStatus as string) === 'STOPPED') {
-        setActiveTimer(null);
-        setRemainingSeconds(0);
-      }
-      debouncedSync(100);
-    } else if (latestWsEvent.event === 'COMMAND_LIFECYCLE') {
-      if (
-        latestWsEvent.status === 'EXECUTED' ||
-        latestWsEvent.status === 'FAILED' ||
-        latestWsEvent.status === 'ACKNOWLEDGED'
-      ) {
-        debouncedSync(200);
-      }
+      if (payload.current_a !== undefined) setCurrentAmps(payload.current_a);
+      if (payload.voltage_v !== undefined) setVoltage(payload.voltage_v);
+      if (payload.power_kw !== undefined) setPowerKw(payload.power_kw);
+      if (payload.flow_rate_lpm !== undefined) setFlowRateLpm(payload.flow_rate_lpm);
+      if (payload.tank_level !== undefined) setTankLevel(payload.tank_level);
+      if (payload.sump_level !== undefined) setSumpLevel(payload.sump_level);
+      if (payload.turbidity_ntu !== undefined) setTurbidity(payload.turbidity_ntu);
+      if (payload.ph !== undefined) setPh(payload.ph);
+
+      debouncedSync(400);
     }
-  }, [latestWsEvent, motor, voltage, debouncedSync]);
+  }, [latestWsEvent, debouncedSync]);
+
+  const handleSelectMotor = (selectedMotor: Motor) => {
+    setMotor(selectedMotor);
+    motorRef.current = selectedMotor;
+    setToastMessage(`Switched active control to ${selectedMotor.name}`);
+    setTimeout(() => setToastMessage(null), 2500);
+    debouncedSync(100);
+  };
 
   // Start / Stop Power Action with Scheduled Closing Duration Support
   const handlePowerToggle = async () => {
@@ -861,6 +451,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
       try {
         await api.stopMotor(motor.id);
         setToastMessage(`Pump (${motor.motor_code}) Stopped`);
+        audioAlert.testSound('INFO');
         setTimeout(() => setToastMessage(null), 2500);
         debouncedSync(100);
       } catch (err: any) {
@@ -917,6 +508,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
       setToastMessage(
         `Pump (${motor.motor_code}) Started • Auto-closing in ${durationMinutes} min`
       );
+      audioAlert.testSound('INFO');
       setTimeout(() => setToastMessage(null), 3500);
       debouncedSync(100);
     } catch (err: any) {
@@ -939,6 +531,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
       setActiveTimer(updated);
       setRemainingSeconds(Math.max(0, Math.round(updated.remaining_seconds)));
       setToastMessage(`Scheduled operation extended (+${Math.round(extendSeconds / 60)} min)`);
+      audioAlert.testSound('INFO');
       setTimeout(() => setToastMessage(null), 3500);
     } catch (err: any) {
       setToastMessage(err.message || 'Failed to extend schedule timer');
@@ -948,25 +541,45 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
     }
   };
 
-  const handleSaveOperationalSettings = async () => {
+  const handleUpdateTankThreshold = async (newVal: number) => {
     if (!station) return;
-    setIsSavingSettings(true);
-    try {
-      await api.updateStationSettings(station.id, {
-        water_level_threshold: Number(tankStopThreshold),
-        turbidity_threshold: Number(turbidityStopThreshold),
-        auto_stop_on_tank_full: Boolean(autoStopTankFull),
-        offline_alert_enabled: Boolean(offlineAlertEnabled),
-      });
-      setToastMessage('✓ Operational Thresholds & Safety Rules Saved!');
-      setTimeout(() => setToastMessage(null), 3500);
-      debouncedSync(100);
-    } catch (err: any) {
-      setToastMessage(err.message || 'Failed to save station settings');
-      setTimeout(() => setToastMessage(null), 3500);
-    } finally {
-      setIsSavingSettings(false);
-    }
+    setTankStopThreshold(newVal);
+    await api.updateStationSettings(station.id, {
+      water_level_threshold: Number(newVal),
+    });
+    setToastMessage(`✓ Overhead Tank Auto-Stop Level Saved: ${newVal}%`);
+    setTimeout(() => setToastMessage(null), 3000);
+    debouncedSync(200);
+  };
+
+  const handleToggleAutoStop = async (enabled: boolean) => {
+    if (!station) return;
+    setAutoStopTankFull(enabled);
+    await api.updateStationSettings(station.id, {
+      auto_stop_on_tank_full: enabled,
+    });
+    setToastMessage(`✓ Auto-Stop on Tank Full Rule ${enabled ? 'Enabled' : 'Disabled'}`);
+    setTimeout(() => setToastMessage(null), 3000);
+    debouncedSync(200);
+  };
+
+  const handleUpdateSumpThreshold = async (newVal: number) => {
+    if (!station) return;
+    setSumpDryRunThreshold(newVal);
+    setToastMessage(`✓ Sump Dry-Run Cutoff Saved: ${newVal}%`);
+    setTimeout(() => setToastMessage(null), 3000);
+    debouncedSync(200);
+  };
+
+  const handleUpdateTurbidityThreshold = async (newVal: number) => {
+    if (!station) return;
+    setTurbidityStopThreshold(newVal);
+    await api.updateStationSettings(station.id, {
+      turbidity_threshold: Number(newVal),
+    });
+    setToastMessage(`✓ Turbidity Cutoff Limit Saved: ${newVal} NTU`);
+    setTimeout(() => setToastMessage(null), 3000);
+    debouncedSync(200);
   };
 
   const handleToggleScheduleActive = async (s: ScheduleResponse) => {
@@ -1000,1198 +613,784 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
     }
   };
 
-  const activeSchedulesCount = schedules.filter((s) => s.is_active).length;
+  const handleSaveOperationalSettings = async () => {
+    if (!station) return;
+    setIsSavingSettings(true);
+    try {
+      await api.updateStationSettings(station.id, {
+        water_level_threshold: Number(tankStopThreshold),
+        turbidity_threshold: Number(turbidityStopThreshold),
+        auto_stop_on_tank_full: Boolean(autoStopTankFull),
+        offline_alert_enabled: Boolean(offlineAlertEnabled),
+      });
+      setToastMessage('✓ Operational Thresholds & Safety Rules Saved!');
+      setTimeout(() => setToastMessage(null), 3500);
+      debouncedSync(100);
+    } catch (err: any) {
+      setToastMessage(err.message || 'Failed to save station settings');
+      setTimeout(() => setToastMessage(null), 3500);
+    } finally {
+      setIsSavingSettings(false);
+    }
+  };
+
+  // Convert raw events into structured sessions
+  const runSessions: PumpRunSession[] = React.useMemo(() => {
+    const sorted = [...recentEvents].sort(
+      (a, b) => new Date(a.occurred_at).getTime() - new Date(b.occurred_at).getTime()
+    );
+
+    const sessions: PumpRunSession[] = [];
+    const openStartsByMotor: Record<string, MotorEventResponse> = {};
+
+    for (const ev of sorted) {
+      const motorId = ev.motor_id;
+      const targetMotor = motorsList.find((m) => m.id === motorId) || motor;
+      const motorCode = targetMotor?.motor_code || 'MTR-1';
+      const motorName = targetMotor?.name || 'Main Pump';
+
+      if (ev.event_type === 'STARTED') {
+        openStartsByMotor[motorId] = ev;
+      } else if (ev.event_type === 'STOPPED' || ev.event_type === 'FAULT' || ev.event_type === 'EMERGENCY_STOP') {
+        const startEv = openStartsByMotor[motorId];
+        const stopTime = ev.occurred_at;
+        const startTime = startEv ? startEv.occurred_at : stopTime;
+        const durationSecs = Math.max(
+          0,
+          Math.round((new Date(stopTime).getTime() - new Date(startTime).getTime()) / 1000)
+        );
+
+        let stopCategory: PumpRunSession['stopReasonCategory'] = 'NORMAL';
+        let stopReason = ev.description || 'Routine Cycle Finished';
+
+        if (ev.event_payload?.reason) {
+          stopReason = ev.event_payload.reason;
+        }
+
+        const reasonUpper = stopReason.toUpperCase();
+        if (reasonUpper.includes('SCHEDULE') || reasonUpper.includes('AUTO_STOP')) {
+          stopCategory = 'SCHEDULE_END';
+        } else if (reasonUpper.includes('TANK_FULL') || reasonUpper.includes('OVERFLOW')) {
+          stopCategory = 'TANK_FULL';
+        } else if (reasonUpper.includes('TURBIDITY')) {
+          stopCategory = 'TURBIDITY';
+        } else if (reasonUpper.includes('DRY_RUN')) {
+          stopCategory = 'DRY_RUN';
+        } else if (reasonUpper.includes('MANUAL')) {
+          stopCategory = 'MANUAL_STOP';
+        } else if (reasonUpper.includes('EMERGENCY')) {
+          stopCategory = 'EMERGENCY_STOP';
+        }
+
+        sessions.unshift({
+          id: ev.id,
+          motorId,
+          motorCode,
+          motorName,
+          startTime,
+          stopTime,
+          durationSeconds: durationSecs,
+          triggerType: startEv?.source === 'AUTOMATION' ? 'SCHEDULED' : 'MANUAL',
+          scheduleName: startEv?.event_payload?.schedule_name || undefined,
+          description: ev.description || undefined,
+          isRunning: false,
+          status: ev.event_type === 'FAULT' || ev.event_type === 'EMERGENCY_STOP' ? 'TRIPPED' : 'COMPLETED',
+          stopReason,
+          stopReasonCategory: stopCategory,
+        });
+
+        delete openStartsByMotor[motorId];
+      }
+    }
+
+    // Include currently running sessions
+    if (motor && isMotorRunning) {
+      sessions.unshift({
+        id: 'live-active-session',
+        motorId: motor.id,
+        motorCode: motor.motor_code,
+        motorName: motor.name,
+        startTime: activeTimer?.started_at || new Date().toISOString(),
+        stopTime: null,
+        durationSeconds: activeTimer ? activeTimer.duration_seconds - remainingSeconds : 120,
+        triggerType: activeTimer?.schedule_name ? 'SCHEDULED' : 'MANUAL',
+        scheduleName: activeTimer?.schedule_name || undefined,
+        description: 'Currently running active pumping cycle',
+        isRunning: true,
+        status: 'RUNNING',
+        stopReason: 'Active Operation In Progress',
+        stopReasonCategory: 'RUNNING',
+      });
+    }
+
+    return sessions;
+  }, [recentEvents, motorsList, motor, isMotorRunning, activeTimer, remainingSeconds]);
+
+  const filteredSessions = runSessions.filter((s) => {
+    if (historyMotorFilter !== 'ALL' && s.motorId !== historyMotorFilter) return false;
+    if (historyTypeFilter !== 'ALL' && s.triggerType !== historyTypeFilter) return false;
+    return true;
+  });
+
+  const filteredEvents = recentEvents.filter((ev) => {
+    if (historyMotorFilter !== 'ALL' && ev.motor_id !== historyMotorFilter) return false;
+    return true;
+  });
+
+  const historyMetrics = React.useMemo(() => {
+    let totalSecs = 0;
+    let schedSecs = 0;
+    let manualSecs = 0;
+    let schedCount = 0;
+    let manualCount = 0;
+
+    for (const s of runSessions) {
+      totalSecs += s.durationSeconds;
+      if (s.triggerType === 'SCHEDULED') {
+        schedSecs += s.durationSeconds;
+        schedCount++;
+      } else {
+        manualSecs += s.durationSeconds;
+        manualCount++;
+      }
+    }
+
+    return {
+      totalFormatted: formatDurationSecs(totalSecs),
+      scheduledFormatted: formatDurationSecs(schedSecs),
+      manualFormatted: formatDurationSecs(manualSecs),
+      scheduledCount: schedCount,
+      manualCount: manualCount,
+    };
+  }, [runSessions]);
+
   const isAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'ORGANIZATION_ADMIN';
 
   return (
-    <div className="w-full max-w-lg mx-auto px-3.5 pt-2 pb-24 space-y-3 font-['Plus_Jakarta_Sans',sans-serif] selection:bg-cyan-500 selection:text-white">
+    <div className="w-full max-w-lg mx-auto px-3.5 pt-1.5 pb-24 space-y-3.5 font-['Poppins',sans-serif] selection:bg-blue-500 selection:text-white">
       {/* Toast Alert */}
       {toastMessage && (
-        <div className="fixed top-14 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-2xl bg-slate-900/95 border border-slate-700 text-white text-xs font-bold flex items-center gap-2 shadow-2xl backdrop-blur-md animate-bounce">
-          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+        <div className="fixed top-[calc(4.25rem+env(safe-area-inset-top,0px))] left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-2xl bg-slate-900/95 border border-slate-700 text-white text-xs font-bold flex items-center gap-2 backdrop-blur-md animate-bounce">
+          <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
           <span>{toastMessage}</span>
         </div>
       )}
 
       {/* ========================================================================= */}
-      {/* TAB 1: HOME */}
+      {/* TAB 1: HOME (OR DETAIL SERVICE SCREEN IF SELECTED) */}
       {/* ========================================================================= */}
       {activeTab === 'HOME' && (
         <>
-          {/* Station Status Header Card */}
-          <div className="mobile-card p-3.5 flex items-center justify-between gap-2.5">
-            <div className="flex items-center gap-2.5 min-w-0 flex-1">
-              <span className="relative flex h-2.5 w-2.5 flex-shrink-0">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-teal-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-teal-600"></span>
-              </span>
-              <div className="min-w-0">
-                <h2 className="text-sm font-black text-slate-900 tracking-tight leading-tight truncate">
-                  {station?.name || 'Demo Water Pump Station'}
-                </h2>
-                <div className="text-[11px] text-slate-400 font-medium truncate mt-0.5">
-                  {site?.name || 'Demo Main Site'} &bull; {controller?.device_uid || 'DEMO-ESP32-001'}
-                </div>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-1.5 flex-shrink-0">
-              <span className="inline-flex items-center gap-1 px-2 py-1 rounded-xl bg-amber-50 border border-amber-200/80 text-[10px] font-bold text-amber-700 whitespace-nowrap">
-                <AlertTriangle className="w-3 h-3 text-amber-500 flex-shrink-0" />
-                <span>1m ago</span>
-              </span>
-              <button
-                onClick={() => loadData(true)}
-                title="Refresh Station Data"
-                className="p-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors flex-shrink-0"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin text-teal-600' : ''}`} />
-              </button>
-            </div>
-          </div>
-
-          {/* ========================================================================= */}
-          {/* MOTOR UNIT SELECTOR (Below Demo Station, Above Interlocks) */}
-          {/* ========================================================================= */}
-          {motorsList.length > 0 && (
-            <div className="mobile-card p-3 space-y-2.5">
-              <div className="flex items-center justify-between gap-1 text-[11px] font-black tracking-tight text-slate-700 uppercase">
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <Sliders className="w-3.5 h-3.5 text-teal-600 flex-shrink-0" />
-                  <span className="truncate">SELECT ACTIVE MOTOR</span>
-                </div>
-                <span className="px-2 py-0.5 rounded-lg bg-teal-50 border border-teal-200/80 text-[10px] font-bold text-teal-700">
-                  {motorsList.length} Unit{motorsList.length !== 1 ? 's' : ''} Online
-                </span>
-              </div>
-
-              {/* Motor Units Selector Grid */}
-              <div className={`grid ${motorsList.length > 1 ? 'grid-cols-2' : 'grid-cols-1'} gap-2`}>
-                {motorsList.map((m) => {
-                  const isSelected = motor?.id === m.id;
-                  const isRunning = m.status === 'ON' || m.status === 'STARTING';
-                  return (
-                    <button
-                      key={m.id}
-                      type="button"
-                      onClick={() => handleSelectMotor(m)}
-                      className={`p-2.5 rounded-2xl border text-left flex flex-col justify-between transition-all duration-200 relative overflow-hidden cursor-pointer ${
-                        isSelected
-                          ? 'bg-gradient-to-br from-teal-500/10 via-teal-50/50 to-white border-teal-500/80 shadow-md shadow-teal-500/10 ring-2 ring-teal-500/20'
-                          : 'bg-slate-50/80 hover:bg-slate-100/90 border-slate-200/80 text-slate-600 hover:border-slate-300'
-                      }`}
-                    >
-                      {/* Active Indicator Top Accent */}
-                      {isSelected && (
-                        <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-teal-500 to-cyan-500" />
-                      )}
-
-                      <div className="flex items-start justify-between gap-1.5">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1.5">
-                            <span
-                              className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                                isRunning
-                                  ? 'bg-emerald-500 animate-pulse shadow-xs'
-                                  : m.status === 'FAULT'
-                                  ? 'bg-rose-500'
-                                  : 'bg-slate-400'
-                              }`}
-                            />
-                            <div className="text-xs font-black text-slate-900 truncate">
-                              {m.name}
-                            </div>
-                          </div>
-                          <div className="text-[10px] font-mono text-slate-400 font-semibold mt-0.5 truncate">
-                            {m.motor_code} &bull; {m.rated_power ?? 1.5} kW
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-1 flex-shrink-0">
-                          <span
-                            className={`px-1.5 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider ${
-                              isRunning
-                                ? 'bg-emerald-100 text-emerald-700'
-                                : m.status === 'FAULT'
-                                ? 'bg-rose-100 text-rose-700'
-                                : 'bg-slate-200 text-slate-600'
-                            }`}
-                          >
-                            {m.status}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center justify-between pt-1.5 mt-1 border-t border-slate-100/80 text-[10px]">
-                        <span className={`font-bold ${isSelected ? 'text-teal-700' : 'text-slate-400'}`}>
-                          {isSelected ? '✓ ACTIVE CONTROL' : 'Tap to Select'}
-                        </span>
-                        <span className="text-[9px] text-slate-400 uppercase font-medium">
-                          {m.motor_type?.replace('_', ' ') || 'PUMP'}
-                        </span>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+          {/* ------------------------------------------------------------- */}
+          {/* DETAIL SERVICE SCREENS (WHEN CLICKED ON ANY SERVICE CARD) */}
+          {/* ------------------------------------------------------------- */}
+          {activeServiceScreen === 'SELECT_MOTOR' && (
+            <MotorSelectionScreen
+              onBack={() => setActiveServiceScreen(null)}
+              motors={motorsList.length > 0 ? motorsList : (motor ? [motor] : [])}
+              activeMotor={motor}
+              onSelectMotor={handleSelectMotor}
+              isProcessing={isProcessing}
+              onPowerToggle={handlePowerToggle}
+              onOpenStartModal={() => setIsStartModalOpen(true)}
+              currentAmps={currentAmps}
+              voltage={voltage}
+              powerKw={powerKw}
+              onRefresh={() => loadData(true)}
+              isSyncing={isSyncing}
+            />
           )}
 
-          {/* ========================================================================= */}
-          {/* SAFETY INTERLOCKS CARD (Directly below Motor Selector Section) */}
-          {/* ========================================================================= */}
-          <div className="mobile-card p-3.5 space-y-2.5">
-            <div className="flex items-center justify-between gap-1 text-[12px] font-black tracking-tight text-emerald-600 uppercase">
-              <div className="flex items-center gap-1.5 min-w-0">
-                <Activity className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-                <span className="truncate">INTERLOCKS</span>
-              </div>
-              <span className="text-[12px] font-bold text-emerald-600 flex-shrink-0">100% OK</span>
-            </div>
+          {activeServiceScreen === 'INTERLOCKS' && (
+            <InterlocksScreen
+              onBack={() => setActiveServiceScreen(null)}
+              tankLevel={tankLevel}
+              tankStopThreshold={tankStopThreshold}
+              sumpLevel={sumpLevel}
+              sumpDryRunThreshold={sumpDryRunThreshold}
+              turbidity={turbidity}
+              turbidityStopThreshold={turbidityStopThreshold}
+              currentAmps={currentAmps}
+              voltage={voltage}
+              onRefresh={() => loadData(true)}
+              isSyncing={isSyncing}
+            />
+          )}
 
-            {/* 4 Green Bullet Checks (2x2 Grid) */}
-            <div className="grid grid-cols-2 gap-2 text-[12px] font-bold text-slate-800">
-              <div className="flex items-center gap-2 bg-slate-50/90 hover:bg-slate-100/80 px-3 py-2 rounded-xl border border-slate-100 transition-colors">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 flex-shrink-0 shadow-xs" />
-                <span className="truncate">Overflow</span>
-              </div>
-              <div className="flex items-center gap-2 bg-slate-50/90 hover:bg-slate-100/80 px-3 py-2 rounded-xl border border-slate-100 transition-colors">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 flex-shrink-0 shadow-xs" />
-                <span className="truncate">Dry-Run</span>
-              </div>
-              <div className="flex items-center gap-2 bg-slate-50/90 hover:bg-slate-100/80 px-3 py-2 rounded-xl border border-slate-100 transition-colors">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 flex-shrink-0 shadow-xs" />
-                <span className="truncate">Turbidity</span>
-              </div>
-              <div className="flex items-center gap-2 bg-slate-50/90 hover:bg-slate-100/80 px-3 py-2 rounded-xl border border-slate-100 transition-colors">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 flex-shrink-0 shadow-xs" />
-                <span className="truncate">E-Stop</span>
-              </div>
-            </div>
+          {activeServiceScreen === 'TANK_LEVEL' && (
+            <TankLevelScreen
+              onBack={() => setActiveServiceScreen(null)}
+              tankLevel={tankLevel}
+              waterHeadMeters={waterHeadMeters}
+              tankStopThreshold={tankStopThreshold}
+              onUpdateTankThreshold={handleUpdateTankThreshold}
+              autoStopTankFull={autoStopTankFull}
+              onToggleAutoStop={handleToggleAutoStop}
+              onRefresh={() => loadData(true)}
+              isSyncing={isSyncing}
+            />
+          )}
 
-            <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] font-medium text-slate-500">
-              <span>Authority:</span>
-              <span className="text-teal-700 font-bold">Local ESP32</span>
-            </div>
-          </div>
+          {activeServiceScreen === 'SUMP_LEVEL' && (
+            <SumpLevelScreen
+              onBack={() => setActiveServiceScreen(null)}
+              sumpLevel={sumpLevel}
+              sumpDryRunThreshold={sumpDryRunThreshold}
+              onUpdateSumpThreshold={handleUpdateSumpThreshold}
+              onRefresh={() => loadData(true)}
+              isSyncing={isSyncing}
+            />
+          )}
 
-          {/* ========================================================================= */}
-          {/* SCHEDULED OPERATION LIVE COUNTDOWN & 1-MINUTE WARNING BANNER */}
-          {/* ========================================================================= */}
-          {isMotorRunning && activeTimer && activeTimer.is_running && remainingSeconds > 0 && (
-            remainingSeconds <= 60 || activeTimer.is_warning_active ? (
-              /* PROMINENT 1-MINUTE PRE-EXPIRATION WARNING CARD */
-              <div className="p-4 rounded-3xl bg-gradient-to-r from-amber-500/15 via-rose-500/15 to-amber-500/15 border-2 border-amber-400/80 shadow-xl shadow-amber-500/10 space-y-3 backdrop-blur-md animate-pulse-flow">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <span className="p-1.5 rounded-xl bg-amber-500 text-white animate-bounce">
-                      <AlertTriangle className="w-4 h-4 stroke-[2.5]" />
-                    </span>
-                    <div>
-                      <h3 className="text-xs font-black text-amber-900 uppercase tracking-wide">
-                        ⚠️ Motor Will Stop in {remainingSeconds}s
-                      </h3>
-                      <p className="text-[11px] text-amber-800 font-medium">
-                        {activeTimer.schedule_name || 'Scheduled Operation'} is about to finish.
-                      </p>
+          {activeServiceScreen === 'FLOW_RATE' && (
+            <FlowRateScreen
+              onBack={() => setActiveServiceScreen(null)}
+              flowRateLpm={flowRateLpm}
+              isMotorRunning={isMotorRunning}
+              onRefresh={() => loadData(true)}
+              isSyncing={isSyncing}
+            />
+          )}
+
+          {activeServiceScreen === 'WATER_QUALITY' && (
+            <WaterQualityScreen
+              onBack={() => setActiveServiceScreen(null)}
+              turbidity={turbidity}
+              ph={ph}
+              turbidityStopThreshold={turbidityStopThreshold}
+              onUpdateTurbidityThreshold={handleUpdateTurbidityThreshold}
+              onRefresh={() => loadData(true)}
+              isSyncing={isSyncing}
+            />
+          )}
+
+          {activeServiceScreen === 'ELECTRICAL_LOAD' && (
+            <ElectricalLoadScreen
+              onBack={() => setActiveServiceScreen(null)}
+              currentAmps={currentAmps}
+              voltage={voltage}
+              powerKw={powerKw}
+              isMotorRunning={isMotorRunning}
+              onRefresh={() => loadData(true)}
+              isSyncing={isSyncing}
+            />
+          )}
+
+          {activeServiceScreen === 'SCHEDULES' && (
+            <SchedulesScreen
+              onBack={() => setActiveServiceScreen(null)}
+              schedules={schedules}
+              motors={motorsList.length > 0 ? motorsList : (motor ? [motor] : [])}
+              activeMotor={motor}
+              onOpenAddSchedule={() => setIsScheduleModalOpen(true)}
+              onToggleScheduleActive={handleToggleScheduleActive}
+              onDeleteSchedule={(s) => setScheduleToDelete(s)}
+              onRefresh={() => loadData(true)}
+              isSyncing={isSyncing}
+            />
+          )}
+
+          {activeServiceScreen === 'LATEST_EVENT' && (
+            <LatestEventsScreen
+              onBack={() => setActiveServiceScreen(null)}
+              runSessions={runSessions}
+              filteredSessions={filteredSessions}
+              filteredEvents={filteredEvents}
+              motors={motorsList}
+              historyMotorFilter={historyMotorFilter}
+              setHistoryMotorFilter={setHistoryMotorFilter}
+              historyTypeFilter={historyTypeFilter}
+              setHistoryTypeFilter={setHistoryTypeFilter}
+              historyViewMode={historyViewMode}
+              setHistoryViewMode={setHistoryViewMode}
+              historyMetrics={historyMetrics}
+              onRefresh={() => loadData(true)}
+              isSyncing={isSyncing}
+              parseIsoDate={parseIsoDate}
+              formatDurationSecs={formatDurationSecs}
+            />
+          )}
+
+          {activeServiceScreen === 'BCSS_ACCOUNT' && (
+            <BcssAccountScreen
+              onBack={() => setActiveServiceScreen(null)}
+              onOpenAdminModal={() => setIsAdminModalOpen(true)}
+            />
+          )}
+
+          {/* ------------------------------------------------------------- */}
+          {/* DEFAULT HOME PAGE VIEW (EXACT PIXEL REPLICA OF SCREENSHOT) */}
+          {/* ------------------------------------------------------------- */}
+          {activeServiceScreen === null && (
+            <>
+              {/* 1. STATION STATUS CARD */}
+              <div className="mobile-card p-3.5 flex items-center justify-between gap-2.5 rounded-2xl bg-white border border-slate-200">
+                <div className="flex items-center gap-3 min-w-0 flex-1">
+                  <span className="relative flex h-3 w-3 flex-shrink-0">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+                  </span>
+                  <div className="min-w-0">
+                    <h2 className="text-sm font-black text-slate-900 tracking-tight leading-tight truncate">
+                      {station?.name || 'Demo Water Pump Station'}
+                    </h2>
+                    <div className="text-[11px] text-slate-400 font-medium truncate mt-0.5">
+                      {site?.name || 'Demo Main Site'} &bull; {controller?.device_uid || 'DEMO-ESP32-001'}
                     </div>
-                  </div>
-                  <div className="px-3 py-1 rounded-xl bg-amber-500 text-white font-mono font-black text-sm shadow-md">
-                    00:{String(remainingSeconds).padStart(2, '0')}
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 pt-1">
+                <div className="flex items-center gap-1.5 flex-shrink-0">
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-amber-50 border border-amber-200/80 text-[10px] font-bold text-amber-700 whitespace-nowrap">
+                    <AlertTriangle className="w-3 h-3 text-amber-500 flex-shrink-0" />
+                    <span>1m ago</span>
+                  </span>
                   <button
-                    type="button"
-                    onClick={() => handleContinueTimer(900)}
-                    disabled={isExtending || !isOperator}
-                    className="flex-1 py-2.5 px-3 rounded-2xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-black flex items-center justify-center gap-1.5 shadow-lg shadow-amber-600/25 transition-all active:scale-95 disabled:opacity-50"
+                    onClick={() => loadData(true)}
+                    title="Refresh Station Data"
+                    className="p-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors flex-shrink-0 cursor-pointer"
                   >
-                    <FastForward className="w-3.5 h-3.5 stroke-[3]" />
-                    <span>{isExtending ? 'EXTENDING...' : 'CONTINUE (+15 MIN)'}</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handlePowerToggle}
-                    disabled={isProcessing || !isOperator}
-                    className="py-2.5 px-4 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-black flex items-center justify-center gap-1.5 shadow-lg shadow-rose-600/25 transition-all active:scale-95 disabled:opacity-50"
-                  >
-                    <Square className="w-3.5 h-3.5 fill-current" />
-                    <span>STOP NOW</span>
+                    <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin text-blue-600' : ''}`} />
                   </button>
                 </div>
               </div>
-            ) : (
-              /* ACTIVE SCHEDULE COUNTDOWN CARD */
-              <div className="mobile-card p-3.5 bg-gradient-to-r from-teal-500/10 via-cyan-500/10 to-teal-500/10 border-teal-300/80 shadow-lg shadow-teal-500/5 space-y-2.5">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="p-1.5 rounded-xl bg-teal-600 text-white shadow-sm">
-                      <Timer className="w-4 h-4 animate-spin" />
+
+              {/* 2. HERO BANNER / 2-MOTORS SECTION */}
+              {motorsList.length >= 2 ? (
+                /* 2 MOTORS SELECTION CARD (WHEN STATION HAS MULTIPLE MOTORS) */
+                <div className="p-3.5 rounded-3xl bg-white border border-slate-200 space-y-2.5">
+                  <div className="flex items-center justify-between gap-1 text-[11px] font-black tracking-tight text-slate-700 uppercase">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <Sliders className="w-3.5 h-3.5 text-blue-600 flex-shrink-0" />
+                      <span className="truncate">SELECT ACTIVE MOTOR</span>
+                    </div>
+                    <span className="px-2 py-0.5 rounded-lg bg-blue-50 border border-blue-200/80 text-[10px] font-bold text-blue-700">
+                      {motorsList.length} Units Online
                     </span>
-                    <div className="min-w-0">
-                      <div className="text-xs font-black text-teal-950 uppercase tracking-tight truncate">
-                        Scheduled Operation Active
+                  </div>
+
+                  {/* 2 Motors Grid */}
+                  <div className="grid grid-cols-2 gap-2">
+                    {motorsList.map((m) => {
+                      const isSelected = motor?.id === m.id;
+                      const isRunning = m.status === 'ON' || m.status === 'STARTING';
+                      return (
+                        <button
+                          key={m.id}
+                          type="button"
+                          onClick={() => handleSelectMotor(m)}
+                          className={`p-3 rounded-2xl border text-left flex flex-col justify-between transition-all duration-200 relative overflow-hidden cursor-pointer ${
+                            isSelected
+                              ? 'bg-blue-50/70 border-blue-500 ring-1 ring-blue-500/30'
+                              : 'bg-slate-50/80 hover:bg-slate-100/90 border-slate-200/80 text-slate-600 hover:border-slate-300'
+                          }`}
+                        >
+                          {isSelected && (
+                            <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-blue-500 to-cyan-500" />
+                          )}
+
+                          <div className="flex items-start justify-between gap-1.5">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-1.5">
+                                <span
+                                  className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                                    isRunning
+                                      ? 'bg-emerald-500 animate-pulse'
+                                      : m.status === 'FAULT'
+                                      ? 'bg-rose-500'
+                                      : 'bg-slate-400'
+                                  }`}
+                                />
+                                <div className="text-xs font-black text-slate-900 truncate">
+                                  {m.name}
+                                </div>
+                              </div>
+                              <div className="text-[10px] font-mono text-slate-400 font-semibold mt-0.5 truncate">
+                                {m.motor_code} &bull; {m.rated_power ?? 1.5} kW
+                              </div>
+                            </div>
+
+                            <span
+                              className={`px-1.5 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider ${
+                                isRunning
+                                  ? 'bg-emerald-100 text-emerald-700'
+                                  : m.status === 'FAULT'
+                                  ? 'bg-rose-100 text-rose-700'
+                                  : 'bg-slate-200 text-slate-600'
+                              }`}
+                            >
+                              {m.status}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center justify-between pt-2 mt-1.5 border-t border-slate-100 text-[10px] font-bold">
+                            <span className={isSelected ? 'text-blue-600' : 'text-slate-400'}>
+                              {isSelected ? '✓ ACTIVE' : 'SELECT'}
+                            </span>
+                            <span className="font-mono text-slate-500">
+                              {voltage.toFixed(0)}V &bull; {m.rated_power ?? 1.5}kW
+                            </span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                /* HERO BANNER CARD (1 MOTOR / DEFAULT STATION) */
+                <div className="relative rounded-3xl overflow-hidden border border-slate-200 bg-[#eff6ff] p-5">
+                  <div className="absolute right-0 top-0 bottom-0 w-1/2 pointer-events-none overflow-hidden">
+                    <img
+                      src="/pump-station-hero.png"
+                      alt="Industrial Pump Station"
+                      className="w-full h-full object-cover object-center opacity-90 mix-blend-multiply"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-r from-[#eff6ff] via-[#eff6ff]/50 to-transparent" />
+                  </div>
+
+                  <div className="relative z-10 max-w-[62%] space-y-2">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-blue-600 block">
+                      SMART WATER MANAGEMENT
+                    </span>
+
+                    <h1 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight leading-tight">
+                      Monitor &amp; Control Your Pump Station
+                    </h1>
+
+                    <p className="text-[11px] text-slate-600 font-medium pb-1">
+                      Reliable &bull; Real-time &bull; Efficient
+                    </p>
+
+                    <div className="space-y-1.5 pt-1 text-[11px] font-bold text-slate-800">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                        <span className="truncate">System Online</span>
                       </div>
-                      <div className="text-[10px] text-teal-700 font-semibold truncate">
-                        {activeTimer.schedule_name || 'Timer Cycle'} &bull; Auto-stop at {new Date(activeTimer.end_time || '').toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      <div className="flex items-center gap-2">
+                        <Droplet className="w-4 h-4 text-blue-600 flex-shrink-0 fill-current" />
+                        <span className="truncate">All Parameters Normal</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <BarChart2 className="w-4 h-4 text-slate-700 flex-shrink-0" />
+                        <span className="truncate">Real-time Monitoring</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Shield className="w-4 h-4 text-slate-700 flex-shrink-0" />
+                        <span className="truncate">Safe &amp; Reliable Operation</span>
                       </div>
                     </div>
                   </div>
+                </div>
+              )}
 
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <div className="px-2.5 py-1 rounded-xl bg-teal-600 text-white font-mono font-black text-xs shadow-sm">
-                      {Math.floor(remainingSeconds / 60)}:{String(remainingSeconds % 60).padStart(2, '0')}
+              {/* 3. BCSS ACCOUNT CARD (REPLACED BY LIVE COUNTDOWN TIMER WHEN MOTOR IS STARTED) */}
+              {isMotorRunning ? (
+                activeTimer && remainingSeconds > 0 && (remainingSeconds <= 60 || activeTimer.is_warning_active) ? (
+                  /* PROMINENT 1-MINUTE PRE-EXPIRATION WARNING CARD */
+                  <div className="p-4 rounded-3xl bg-amber-50 border-2 border-amber-400 space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="p-2 rounded-2xl bg-amber-500 text-white animate-bounce">
+                          <AlertTriangle className="w-5 h-5 stroke-[2.5]" />
+                        </span>
+                        <div className="min-w-0">
+                          <h3 className="text-xs font-black text-amber-900 uppercase tracking-wide truncate">
+                            ⚠️ Motor Will Stop in {remainingSeconds}s
+                          </h3>
+                          <p className="text-[11px] text-amber-800 font-medium truncate">
+                            {activeTimer.schedule_name || 'Scheduled Operation'} is about to finish.
+                          </p>
+                        </div>
+                      </div>
+                      <div className="px-3 py-1.5 rounded-2xl bg-amber-500 text-white font-mono font-black text-sm flex-shrink-0">
+                        00:{String(remainingSeconds).padStart(2, '0')}
+                      </div>
                     </div>
-                    {isOperator && (
+
+                    <div className="flex items-center gap-2 pt-1">
                       <button
                         type="button"
                         onClick={() => handleContinueTimer(900)}
-                        disabled={isExtending}
-                        title="Add 15 Minutes to active run"
-                        className="py-1 px-2 rounded-xl bg-teal-100 hover:bg-teal-200 text-teal-800 text-[10px] font-black flex items-center gap-1 border border-teal-300 transition-colors disabled:opacity-50"
+                        disabled={isExtending || !isOperator}
+                        className="flex-1 py-3 px-3 rounded-2xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-black flex items-center justify-center gap-1.5 transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
                       >
-                        <Plus className="w-2.5 h-2.5 stroke-[3]" />
-                        <span>15m</span>
+                        <FastForward className="w-4 h-4 stroke-[2.5]" />
+                        <span>{isExtending ? 'EXTENDING...' : 'CONTINUE (+15 MIN)'}</span>
                       </button>
-                    )}
-                  </div>
-                </div>
 
-                {/* Progress bar */}
-                <div className="w-full h-1.5 bg-teal-100 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-gradient-to-r from-teal-500 to-cyan-500 rounded-full transition-all duration-1000"
-                    style={{
-                      width: `${Math.max(
-                        0,
-                        Math.min(
-                          100,
-                          ((activeTimer.duration_seconds - remainingSeconds) /
-                            Math.max(1, activeTimer.duration_seconds)) *
-                            100
-                        )
-                      )}%`,
-                    }}
-                  />
-                </div>
-              </div>
-            )
-          )}
-
-          {/* 2-COLUMN METRIC CARDS GRID */}
-          <div className="grid grid-cols-2 gap-2.5">
-            {/* CARD 1: OVERHEAD TANK & HEAD */}
-            <div className="mobile-card p-3 space-y-2 flex flex-col justify-between">
-              <div>
-                <div className="flex items-center justify-between gap-1 text-[11px] font-black tracking-tight text-teal-700 uppercase">
-                  <div className="flex items-center gap-1 min-w-0">
-                    <Waves className="w-3.5 h-3.5 flex-shrink-0 text-teal-600" />
-                    <span className="truncate">TANK LEVEL</span>
-                  </div>
-                  <span className="text-[10px] font-semibold text-slate-400 flex-shrink-0">1000L</span>
-                </div>
-
-                <div className="flex items-baseline justify-between mt-1">
-                  <span className="text-2xl font-black text-slate-900 tracking-tight">
-                    {tankLevel.toFixed(1)}%
-                  </span>
-                  <span className="px-1.5 py-0.5 rounded-md bg-teal-600 text-white text-[10px] font-bold">
-                    {tankLevel.toFixed(0)}%
-                  </span>
-                </div>
-
-                {/* Hydro-Teal Gradient Progress Bar */}
-                <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden mt-1.5">
-                  <div
-                    className="h-full bg-gradient-to-r from-teal-500 to-cyan-500 rounded-full transition-all duration-500"
-                    style={{ width: `${Math.min(100, tankLevel)}%` }}
-                  />
-                </div>
-
-                <div className="text-[11px] text-slate-600 font-semibold mt-1">
-                  Head: <span className="font-bold text-slate-900">{waterHeadMeters.toFixed(1)} m</span>
-                </div>
-              </div>
-
-              <div className="pt-1.5 border-t border-slate-100 flex items-center justify-between text-[10px] font-medium text-slate-500">
-                <span className="truncate">Cutoff: &ge;95%</span>
-                <span className="text-emerald-600 font-bold flex-shrink-0">Adequate</span>
-              </div>
-            </div>
-
-            {/* CARD 2: SUMP / SOURCE LEVEL */}
-            <div className="mobile-card p-3 space-y-2 flex flex-col justify-between">
-              <div>
-                <div className="flex items-center justify-between gap-1 text-[11px] font-black tracking-tight text-cyan-700 uppercase">
-                  <div className="flex items-center gap-1 min-w-0">
-                    <Droplet className="w-3.5 h-3.5 flex-shrink-0 text-cyan-600" />
-                    <span className="truncate">SUMP LEVEL</span>
-                  </div>
-                  <span className="text-[10px] font-semibold text-slate-400 flex-shrink-0">5000L</span>
-                </div>
-
-                <div className="flex items-baseline justify-between mt-1">
-                  <span className="text-2xl font-black text-slate-900 tracking-tight">
-                    {sumpLevel.toFixed(1)}%
-                  </span>
-                  <span className="text-[10px] font-semibold text-slate-500">
-                    ~{(sumpLevel * 50).toFixed(0)} L
-                  </span>
-                </div>
-
-                {/* Cyan to Aqua Gradient Progress Bar */}
-                <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden mt-1.5">
-                  <div
-                    className="h-full bg-gradient-to-r from-cyan-500 to-teal-400 rounded-full transition-all duration-500"
-                    style={{ width: `${Math.min(100, sumpLevel)}%` }}
-                  />
-                </div>
-              </div>
-
-              <div className="pt-1.5 border-t border-slate-100 flex items-center justify-between text-[10px] font-medium text-slate-500">
-                <span className="truncate">Dry-Run: &le;10%</span>
-                <span className="text-emerald-600 font-bold flex-shrink-0">Source Safe</span>
-              </div>
-            </div>
-
-            {/* CARD 3: WATER FLOW RATE */}
-            <div className="mobile-card p-3 space-y-2 flex flex-col justify-between">
-              <div>
-                <div className="flex items-center justify-between gap-1 text-[11px] font-black tracking-tight text-teal-700 uppercase">
-                  <div className="flex items-center gap-1 min-w-0">
-                    <Gauge className="w-3.5 h-3.5 flex-shrink-0 text-teal-600" />
-                    <span className="truncate">FLOW RATE</span>
-                  </div>
-                  <span className="text-[10px] font-semibold text-slate-400 flex-shrink-0">Sensor</span>
-                </div>
-
-                <div className="flex items-baseline justify-between mt-1">
-                  <span className="text-2xl font-black text-slate-900 tracking-tight">
-                    {flowRateLpm.toFixed(1)} <span className="text-xs font-bold text-slate-400">L/m</span>
-                  </span>
-                  <span
-                    className={`px-1.5 py-0.5 rounded-md text-[10px] font-bold ${
-                      isMotorRunning
-                        ? 'bg-emerald-100 text-emerald-700'
-                        : 'bg-slate-100 text-slate-600'
-                    }`}
-                  >
-                    {isMotorRunning ? 'Discharging' : 'Idle'}
-                  </span>
-                </div>
-
-                <div className="text-[11px] text-slate-600 font-semibold mt-1">
-                  Discharge: <span className="font-bold text-slate-900">{(flowRateLpm * 0.06).toFixed(2)} m&sup3;/h</span>
-                </div>
-              </div>
-
-              <div className="pt-1.5 border-t border-slate-100 flex items-center justify-between text-[10px] font-medium text-slate-500">
-                <span>Protection:</span>
-                <span className="text-emerald-600 font-bold">Primed &bull; Active</span>
-              </div>
-            </div>
-
-            {/* CARD 4: WATER QUALITY */}
-            <div className="mobile-card p-3 space-y-2 flex flex-col justify-between">
-              <div>
-                <div className="flex items-center justify-between gap-1 text-[11px] font-black tracking-tight text-amber-500 uppercase">
-                  <div className="flex items-center gap-1 min-w-0">
-                    <Shield className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
-                    <span className="truncate">WATER QUALITY</span>
-                  </div>
-                  <span className="px-1.5 py-0.5 rounded-md bg-emerald-50 text-emerald-600 border border-emerald-200 text-[10px] font-bold flex-shrink-0">
-                    Clean
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-2 gap-1.5 mt-1.5">
-                  <div>
-                    <div className="text-[10px] text-slate-400 font-medium">Turbidity</div>
-                    <div className="text-base font-black text-slate-900">
-                      {turbidity.toFixed(1)} <span className="text-[10px] text-slate-400 font-normal">NTU</span>
+                      <button
+                        type="button"
+                        onClick={handlePowerToggle}
+                        disabled={isProcessing || !isOperator}
+                        className="py-3 px-4 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-black flex items-center justify-center gap-1.5 transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
+                      >
+                        <Square className="w-4 h-4 fill-current" />
+                        <span>STOP NOW</span>
+                      </button>
                     </div>
                   </div>
-                  <div>
-                    <div className="text-[10px] text-slate-400 font-medium">pH Level</div>
-                    <div className="text-base font-black text-slate-900">
-                      {ph.toFixed(1)} <span className="text-[10px] text-slate-400 font-normal">pH</span>
+                ) : (
+                  /* ACTIVE RUNNING COUNTDOWN TIMER CARD (REPLACES BCSS ACCOUNT WHEN MOTOR RUNNING) */
+                  <div className="p-4 rounded-3xl bg-blue-600 text-white border border-blue-500 space-y-3 relative overflow-hidden">
+                    <div className="flex items-center justify-between gap-2 relative z-10">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="p-2 rounded-2xl bg-blue-700 text-cyan-200">
+                          <Timer className="w-5 h-5 animate-spin" />
+                        </span>
+                        <div className="min-w-0">
+                          <div className="text-[10px] font-black uppercase tracking-wider text-blue-200">
+                            PUMP ACTIVE &bull; {motor?.name || 'Main Motor'}
+                          </div>
+                          <div className="text-xs font-bold text-white/95 truncate">
+                            {activeTimer?.schedule_name || 'Scheduled Operation'}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <div className="px-3 py-1.5 rounded-2xl bg-blue-700 border border-blue-400/40 font-mono font-black text-sm text-white">
+                          {remainingSeconds > 0
+                            ? `${Math.floor(remainingSeconds / 60)}:${String(remainingSeconds % 60).padStart(2, '0')}`
+                            : 'RUNNING'}
+                        </div>
+                        {isOperator && activeTimer && (
+                          <button
+                            type="button"
+                            onClick={() => handleContinueTimer(900)}
+                            disabled={isExtending}
+                            title="Add 15 minutes to run"
+                            className="py-1.5 px-2.5 rounded-xl bg-white hover:bg-blue-50 text-blue-900 text-xs font-black flex items-center gap-1 transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
+                          >
+                            <Plus className="w-3.5 h-3.5 stroke-[3]" />
+                            <span>15m</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Live Telemetry Mini Grid Inside Timer */}
+                    <div className="grid grid-cols-3 gap-2 pt-1 border-t border-blue-500/60 text-center relative z-10">
+                      <div className="p-2 rounded-2xl bg-blue-700/60 border border-blue-500/40">
+                        <div className="text-[9px] font-bold text-blue-200 uppercase">Current</div>
+                        <div className="text-xs font-black font-mono mt-0.5">{currentAmps.toFixed(1)} A</div>
+                      </div>
+                      <div className="p-2 rounded-2xl bg-blue-700/60 border border-blue-500/40">
+                        <div className="text-[9px] font-bold text-blue-200 uppercase">Voltage</div>
+                        <div className="text-xs font-black font-mono mt-0.5">{voltage.toFixed(0)} V</div>
+                      </div>
+                      <div className="p-2 rounded-2xl bg-blue-700/60 border border-blue-500/40">
+                        <div className="text-[9px] font-bold text-blue-200 uppercase">Power</div>
+                        <div className="text-xs font-black font-mono mt-0.5">{powerKw.toFixed(1)} kW</div>
+                      </div>
                     </div>
                   </div>
-                </div>
-              </div>
-
-              <div className="pt-1.5 border-t border-slate-100 flex items-center justify-between text-[10px] font-medium text-slate-500">
-                <span>Cutoff:</span>
-                <span className="text-slate-700 font-semibold">&gt;25 NTU Auto-Trip</span>
-              </div>
-            </div>
-
-            {/* CARD 5: ELECTRICAL LOAD (Full Width across 2 columns) */}
-            <div className="mobile-card p-3 space-y-2 col-span-2 flex flex-col justify-between">
-              <div>
-                <div className="flex items-center justify-between gap-1 text-[11px] font-black tracking-tight text-purple-600 uppercase">
-                  <div className="flex items-center gap-1 min-w-0">
-                    <Zap className="w-3.5 h-3.5 text-purple-600 flex-shrink-0" />
-                    <span className="truncate">ELECTRICAL LOAD</span>
-                  </div>
-                  <span className="text-[10px] font-semibold text-slate-400 flex-shrink-0">230V Grid</span>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2 mt-1.5">
-                  <div className="bg-slate-50/90 p-2 rounded-xl border border-slate-100">
-                    <div className="text-[10px] text-slate-400 font-medium">Current</div>
-                    <div className="text-base font-black text-slate-900">
-                      {currentAmps.toFixed(1)} <span className="text-xs font-semibold text-slate-400">A</span>
-                    </div>
-                  </div>
-                  <div className="bg-slate-50/90 p-2 rounded-xl border border-slate-100">
-                    <div className="text-[10px] text-slate-400 font-medium">Power</div>
-                    <div className="text-base font-black text-slate-900">
-                      {powerKw.toFixed(1)} <span className="text-xs font-semibold text-slate-400">kW</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="pt-1.5 border-t border-slate-100 flex items-center justify-between text-[10px] font-medium text-slate-500">
-                <span>Overload:</span>
-                <span className="text-emerald-600 font-bold">Safe &lt; 15A</span>
-              </div>
-            </div>
-          </div>
-
-          {/* BOTTOM ROW QUICK CARDS (Above Dock) */}
-          <div className="grid grid-cols-2 gap-2.5 pt-0.5">
-            {/* Quick Card 1: Daily Pump Schedules */}
-            <div className="mobile-card p-3 flex flex-col justify-between space-y-2">
-              <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-lg bg-teal-50 text-teal-700 flex items-center justify-center flex-shrink-0">
-                  <Clock className="w-4 h-4" />
-                </div>
-                <div className="min-w-0">
-                  <div className="text-xs font-bold text-slate-900 leading-tight truncate">
-                    Pump Schedules
-                  </div>
-                  <div className="text-[10px] text-slate-400 font-medium truncate">
-                    {activeSchedulesCount} active timer{activeSchedulesCount !== 1 ? 's' : ''}
-                  </div>
-                </div>
-              </div>
-
-              <button
-                onClick={() => setIsScheduleModalOpen(true)}
-                className="w-full py-1.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-[11px] font-bold flex items-center justify-center gap-1 shadow-md shadow-teal-600/20 transition-all"
-              >
-                <Plus className="w-3 h-3 stroke-[3]" />
-                <span>Configure</span>
-              </button>
-            </div>
-
-            {/* Quick Card 2: Latest Event */}
-            <div className="mobile-card p-3 flex flex-col justify-between space-y-2">
-              <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center flex-shrink-0">
-                  <Zap className="w-4 h-4" />
-                </div>
-                <div className="min-w-0">
-                  <div className="text-xs font-bold text-slate-900 leading-tight truncate">
-                    Latest Event
-                  </div>
-                  <div className="text-[10px] text-slate-400 font-medium truncate">
-                    Ready &amp; Standby
-                  </div>
-                </div>
-              </div>
-
-              <div className="w-full text-center">
-                <span
-                  className={`inline-block w-full py-1 rounded-xl text-[10px] font-black uppercase tracking-wider ${
-                    isMotorRunning
-                      ? 'bg-emerald-100 text-emerald-700'
-                      : 'bg-slate-100 text-slate-600'
-                  }`}
+                )
+              ) : (
+                /* BCSS ACCOUNT CARD (SHOWN ONLY WHEN MOTOR IS IDLE/STOPPED) */
+                <button
+                  type="button"
+                  onClick={() => setActiveServiceScreen('BCSS_ACCOUNT')}
+                  className="w-full mobile-card p-4 rounded-2xl flex items-center justify-between bg-white border border-slate-200 hover:border-blue-300 transition-all cursor-pointer text-left"
                 >
-                  {isMotorRunning ? 'PUMP ON' : 'PUMP IDLE'}
-                </span>
+                  <div className="flex items-center gap-3.5 min-w-0">
+                    <div className="w-10 h-10 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center flex-shrink-0">
+                      <WalletCardIcon className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-black text-slate-900 leading-tight">BCSS Account</div>
+                      <div className="text-[11px] text-slate-500 font-medium mt-0.5 flex items-center gap-1.5">
+                        <span>Balance</span>
+                        <span className="text-[#f43f5e] font-bold">₹</span>
+                        <span className="font-bold text-slate-900 font-mono">0</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="w-7 h-7 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center flex-shrink-0">
+                    <ChevronRight className="w-4 h-4 stroke-[2.5]" />
+                  </div>
+                </button>
+              )}
+
+              {/* 4. 3x3 SERVICE / FUNCTION GRID */}
+              <div className="grid grid-cols-3 gap-3">
+                {/* 1. Select Active Motor */}
+                <button
+                  type="button"
+                  onClick={() => setActiveServiceScreen('SELECT_MOTOR')}
+                  className="mobile-card p-3.5 sm:p-4 rounded-3xl bg-white border border-slate-200 hover:border-blue-400 transition-all active:scale-[0.98] flex flex-col items-center justify-between aspect-square cursor-pointer text-center group"
+                >
+                  <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-[#f0f9ff] flex items-center justify-center group-hover:scale-105 transition-transform my-auto">
+                    <MotorIcon className="w-10 h-10 sm:w-12 sm:h-12" />
+                  </div>
+                  <span className="text-[11px] sm:text-xs font-black text-slate-800 leading-tight text-center mt-1">
+                    Select Active Motor
+                  </span>
+                </button>
+
+                {/* 2. Interlocks */}
+                <button
+                  type="button"
+                  onClick={() => setActiveServiceScreen('INTERLOCKS')}
+                  className="mobile-card p-3.5 sm:p-4 rounded-3xl bg-white border border-slate-200 hover:border-emerald-400 transition-all active:scale-[0.98] flex flex-col items-center justify-between aspect-square cursor-pointer text-center group"
+                >
+                  <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-[#ecfdf5] flex items-center justify-center group-hover:scale-105 transition-transform my-auto">
+                    <InterlockIcon className="w-10 h-10 sm:w-12 sm:h-12" />
+                  </div>
+                  <span className="text-[11px] sm:text-xs font-black text-slate-800 leading-tight text-center mt-1">
+                    Interlocks
+                  </span>
+                </button>
+
+                {/* 3. Tank Level */}
+                <button
+                  type="button"
+                  onClick={() => setActiveServiceScreen('TANK_LEVEL')}
+                  className="mobile-card p-3.5 sm:p-4 rounded-3xl bg-white border border-slate-200 hover:border-blue-400 transition-all active:scale-[0.98] flex flex-col items-center justify-between aspect-square cursor-pointer text-center group"
+                >
+                  <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-[#f0f9ff] flex items-center justify-center group-hover:scale-105 transition-transform my-auto">
+                    <TankLevelIcon className="w-10 h-10 sm:w-12 sm:h-12" />
+                  </div>
+                  <span className="text-[11px] sm:text-xs font-black text-slate-800 leading-tight text-center mt-1">
+                    Tank Level
+                  </span>
+                </button>
+
+                {/* 4. Sump Level */}
+                <button
+                  type="button"
+                  onClick={() => setActiveServiceScreen('SUMP_LEVEL')}
+                  className="mobile-card p-3.5 sm:p-4 rounded-3xl bg-white border border-slate-200 hover:border-blue-400 transition-all active:scale-[0.98] flex flex-col items-center justify-between aspect-square cursor-pointer text-center group"
+                >
+                  <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-[#f0f9ff] flex items-center justify-center group-hover:scale-105 transition-transform my-auto">
+                    <SumpLevelIcon className="w-10 h-10 sm:w-12 sm:h-12" />
+                  </div>
+                  <span className="text-[11px] sm:text-xs font-black text-slate-800 leading-tight text-center mt-1">
+                    Sump Level
+                  </span>
+                </button>
+
+                {/* 5. Flow Rate */}
+                <button
+                  type="button"
+                  onClick={() => setActiveServiceScreen('FLOW_RATE')}
+                  className="mobile-card p-3.5 sm:p-4 rounded-3xl bg-white border border-slate-200 hover:border-blue-400 transition-all active:scale-[0.98] flex flex-col items-center justify-between aspect-square cursor-pointer text-center group"
+                >
+                  <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-[#f0f9ff] flex items-center justify-center group-hover:scale-105 transition-transform my-auto">
+                    <FlowRateIcon className="w-10 h-10 sm:w-12 sm:h-12" />
+                  </div>
+                  <span className="text-[11px] sm:text-xs font-black text-slate-800 leading-tight text-center mt-1">
+                    Flow Rate
+                  </span>
+                </button>
+
+                {/* 6. Water Quality */}
+                <button
+                  type="button"
+                  onClick={() => setActiveServiceScreen('WATER_QUALITY')}
+                  className="mobile-card p-3.5 sm:p-4 rounded-3xl bg-white border border-slate-200 hover:border-blue-400 transition-all active:scale-[0.98] flex flex-col items-center justify-between aspect-square cursor-pointer text-center group"
+                >
+                  <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-[#f0f9ff] flex items-center justify-center group-hover:scale-105 transition-transform my-auto">
+                    <WaterQualityIcon className="w-10 h-10 sm:w-12 sm:h-12" />
+                  </div>
+                  <span className="text-[11px] sm:text-xs font-black text-slate-800 leading-tight text-center mt-1">
+                    Water Quality
+                  </span>
+                </button>
+
+                {/* 7. Electrical Load */}
+                <button
+                  type="button"
+                  onClick={() => setActiveServiceScreen('ELECTRICAL_LOAD')}
+                  className="mobile-card p-3.5 sm:p-4 rounded-3xl bg-white border border-slate-200 hover:border-amber-400 transition-all active:scale-[0.98] flex flex-col items-center justify-between aspect-square cursor-pointer text-center group"
+                >
+                  <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-[#f0f9ff] flex items-center justify-center group-hover:scale-105 transition-transform my-auto">
+                    <ElectricalLoadIcon className="w-10 h-10 sm:w-12 sm:h-12" />
+                  </div>
+                  <span className="text-[11px] sm:text-xs font-black text-slate-800 leading-tight text-center mt-1">
+                    Electrical Load
+                  </span>
+                </button>
+
+                {/* 8. Pump Schedules */}
+                <button
+                  type="button"
+                  onClick={() => setActiveServiceScreen('SCHEDULES')}
+                  className="mobile-card p-3.5 sm:p-4 rounded-3xl bg-white border border-slate-200 hover:border-blue-400 transition-all active:scale-[0.98] flex flex-col items-center justify-between aspect-square cursor-pointer text-center group"
+                >
+                  <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-[#f0f9ff] flex items-center justify-center group-hover:scale-105 transition-transform my-auto">
+                    <PumpScheduleIcon className="w-10 h-10 sm:w-12 sm:h-12" />
+                  </div>
+                  <span className="text-[11px] sm:text-xs font-black text-slate-800 leading-tight text-center mt-1">
+                    Pump Schedules
+                  </span>
+                </button>
+
+                {/* 9. Latest Event */}
+                <button
+                  type="button"
+                  onClick={() => setActiveServiceScreen('LATEST_EVENT')}
+                  className="mobile-card p-3.5 sm:p-4 rounded-3xl bg-white border border-slate-200 hover:border-slate-400 transition-all active:scale-[0.98] flex flex-col items-center justify-between aspect-square cursor-pointer text-center group"
+                >
+                  <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-[#f0f9ff] flex items-center justify-center group-hover:scale-105 transition-transform my-auto">
+                    <LatestEventIcon className="w-10 h-10 sm:w-12 sm:h-12" />
+                  </div>
+                  <span className="text-[11px] sm:text-xs font-black text-slate-800 leading-tight text-center mt-1">
+                    Latest Event
+                  </span>
+                </button>
               </div>
-            </div>
-          </div>
+            </>
+          )}
         </>
       )}
 
       {/* ========================================================================= */}
-      {/* TAB 2: SCHEDULES (FULL USER AUTOMATION & TIME-OF-DAY CONTROLS) */}
+      {/* TAB 2: SCHEDULES (FULL VIEW) */}
       {/* ========================================================================= */}
       {activeTab === 'SCHEDULES' && (
-        <div className="space-y-3.5">
-          {/* Header Title Bar */}
-          <div className="flex items-center justify-between pt-1">
-            <div className="flex items-center gap-2.5">
-              <div className="w-10 h-10 rounded-2xl bg-teal-50 text-teal-700 flex items-center justify-center shadow-xs">
-                <Calendar className="w-5 h-5" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h2 className="text-base font-black text-slate-900 tracking-tight">PUMP SCHEDULES</h2>
-                  <span className="px-2 py-0.5 rounded-full bg-teal-100 text-teal-800 text-[10px] font-extrabold">
-                    {activeSchedulesCount} Active
-                  </span>
-                </div>
-                <p className="text-xs text-slate-400 font-medium">Automated Time-of-Day &amp; Days-of-Week</p>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setIsScheduleModalOpen(true)}
-              className="px-3.5 py-2 rounded-2xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-black flex items-center gap-1.5 shadow-md shadow-teal-600/25 transition-all flex-shrink-0 cursor-pointer"
-            >
-              <Plus className="w-3.5 h-3.5 stroke-[3]" />
-              <span>Add Schedule</span>
-            </button>
-          </div>
-
-          {/* Quick Schedule Management Card */}
-          <div className="mobile-card p-3.5 flex items-center justify-between gap-3 bg-gradient-to-r from-teal-500/10 via-cyan-500/10 to-teal-500/10 border-teal-200">
-            <div className="flex items-center gap-3 min-w-0">
-              <div className="w-9 h-9 rounded-xl bg-teal-600 text-white flex items-center justify-center flex-shrink-0 shadow-xs">
-                <Clock className="w-4 h-4" />
-              </div>
-              <div className="min-w-0">
-                <h3 className="text-xs font-black text-slate-900 truncate">Automated Timer Routines</h3>
-                <p className="text-[11px] text-teal-800 font-medium truncate">
-                  {schedules.length} total routine{schedules.length !== 1 ? 's' : ''} configured
-                </p>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setIsScheduleModalOpen(true)}
-              className="px-3 py-1.5 rounded-xl bg-white border border-teal-300 hover:bg-teal-50 text-teal-800 text-[11px] font-bold shadow-xs transition-colors"
-            >
-              Manage Slots
-            </button>
-          </div>
-
-          {/* Active Schedules List */}
-          <div className="space-y-2.5">
-            <div className="flex items-center justify-between px-1">
-              <h4 className="text-xs font-black uppercase tracking-wider text-slate-400">
-                Configured Schedules ({schedules.length})
-              </h4>
-              <span className="text-[10px] text-slate-400 font-semibold">Tap to Pause or Resume</span>
-            </div>
-
-            {schedules.length === 0 ? (
-              <div className="mobile-card p-8 text-center text-xs text-slate-400 space-y-3">
-                <Clock className="w-10 h-10 text-slate-300 mx-auto" />
-                <div>
-                  <p className="font-bold text-slate-700">No automated schedules created yet.</p>
-                  <p className="text-[11px] text-slate-400 mt-0.5">
-                    Set up a daily morning or evening routine to automatically run water pump.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setIsScheduleModalOpen(true)}
-                  className="px-4 py-2 rounded-2xl bg-teal-600 text-white font-bold text-xs shadow-md shadow-teal-600/20"
-                >
-                  + Create First Schedule
-                </button>
-              </div>
-            ) : (
-              schedules.map((s) => {
-                const targetMotor =
-                  motorsList.find((m) => m.id === s.motor_id) ||
-                  (motor && motor.id === s.motor_id ? motor : null);
-                return (
-                  <div
-                    key={s.id}
-                    className={`mobile-card p-3.5 flex flex-col justify-between gap-3 border transition-all ${
-                      s.is_active
-                        ? 'border-teal-200/80 bg-white'
-                        : 'border-slate-200/80 bg-slate-50/70 opacity-80'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-start gap-2.5 min-w-0">
-                        <span
-                          className={`w-2.5 h-2.5 rounded-full mt-1 shrink-0 ${
-                            s.is_active ? 'bg-emerald-500 shadow-xs' : 'bg-slate-300'
-                          }`}
-                        />
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="text-xs font-black text-slate-900">{s.name}</span>
-                            {targetMotor && (
-                              <span className="px-1.5 py-0.5 rounded bg-teal-50 text-teal-800 text-[10px] font-bold border border-teal-200/60 font-mono flex items-center gap-0.5">
-                                <Zap className="w-2.5 h-2.5 text-teal-600" />
-                                {targetMotor.motor_code}
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-[11px] text-slate-500 font-medium mt-0.5">
-                            Starts at <span className="font-bold text-slate-800">{s.start_time}</span> &bull;{' '}
-                            Runs for <span className="font-bold text-slate-800">{Math.round(s.duration_seconds / 60)} mins</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Day Badges */}
-                      <div className="flex items-center gap-0.5 flex-wrap justify-end">
-                        {['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'].map((d) => {
-                          const isIncluded = s.days_of_week.includes(d);
-                          return (
-                            <span
-                              key={d}
-                              className={`text-[9px] font-bold px-1 py-0.5 rounded ${
-                                isIncluded
-                                  ? 'bg-teal-100 text-teal-800'
-                                  : 'text-slate-300'
-                              }`}
-                            >
-                              {d[0]}
-                            </span>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    {/* Schedule Card Footer Actions */}
-                    <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs">
-                      <button
-                        type="button"
-                        onClick={() => handleToggleScheduleActive(s)}
-                        className={`px-3 py-1.5 rounded-xl font-bold flex items-center gap-1.5 transition-all text-[11px] cursor-pointer ${
-                          s.is_active
-                            ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200'
-                            : 'bg-slate-200 hover:bg-slate-300 text-slate-700'
-                        }`}
-                      >
-                        {s.is_active ? (
-                          <>
-                            <Pause className="w-3 h-3 fill-current" />
-                            <span>Active (Tap to Pause)</span>
-                          </>
-                        ) : (
-                          <>
-                            <Play className="w-3 h-3 fill-current" />
-                            <span>Paused (Tap to Resume)</span>
-                          </>
-                        )}
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setScheduleToDelete(s)}
-                        title="Delete Schedule"
-                        className="p-1.5 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </div>
+        <SchedulesScreen
+          onBack={() => setActiveTab('HOME')}
+          schedules={schedules}
+          motors={motorsList.length > 0 ? motorsList : (motor ? [motor] : [])}
+          activeMotor={motor}
+          onOpenAddSchedule={() => setIsScheduleModalOpen(true)}
+          onToggleScheduleActive={handleToggleScheduleActive}
+          onDeleteSchedule={(s) => setScheduleToDelete(s)}
+          onRefresh={() => loadData(true)}
+          isSyncing={isSyncing}
+        />
       )}
 
       {/* ========================================================================= */}
-      {/* TAB 3: HISTORY (RUN SESSIONS, DURATIONS & EVENT LOGS) */}
+      {/* TAB 3: HISTORY (FULL VIEW) */}
       {/* ========================================================================= */}
       {activeTab === 'HISTORY' && (
-        <div className="space-y-3.5">
-          {/* Header */}
-          <div className="flex items-center justify-between pt-1">
-            <div>
-              <h2 className="text-lg font-black text-slate-900 tracking-tight leading-tight">
-                PUMP RUN HISTORY
-              </h2>
-              <p className="text-[11px] text-slate-400 font-medium">
-                Cycle durations, start / off times &amp; trigger analytics
-              </p>
-            </div>
-            <button
-              onClick={() => loadData(true)}
-              disabled={isSyncing}
-              className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors shadow-xs"
-              title="Refresh History"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin text-teal-600' : ''}`} />
-            </button>
-          </div>
-
-          {/* Aggregate Metrics Grid (Total Runtime, Scheduled Runs, Manual Starts) */}
-          <div className="grid grid-cols-3 gap-2">
-            {/* Total Runtime */}
-            <div className="mobile-card p-3 space-y-1">
-              <div className="flex items-center gap-1.5 text-indigo-600">
-                <Timer className="w-3.5 h-3.5 shrink-0" />
-                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 truncate">
-                  Total Runtime
-                </span>
-              </div>
-              <div className="text-sm font-black text-slate-900 truncate">
-                {historyMetrics.totalFormatted}
-              </div>
-              <div className="text-[9px] text-slate-400 font-medium truncate">
-                {runSessions.length} total cycle{runSessions.length !== 1 ? 's' : ''}
-              </div>
-            </div>
-
-            {/* Scheduled Cycles */}
-            <div className="mobile-card p-3 space-y-1">
-              <div className="flex items-center gap-1.5 text-teal-600">
-                <Calendar className="w-3.5 h-3.5 shrink-0" />
-                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 truncate">
-                  Scheduled
-                </span>
-              </div>
-              <div className="text-sm font-black text-teal-800 truncate">
-                {historyMetrics.scheduledCount} <span className="text-xs font-semibold text-slate-500">runs</span>
-              </div>
-              <div className="text-[9px] text-teal-700 font-medium truncate">
-                {historyMetrics.scheduledFormatted}
-              </div>
-            </div>
-
-            {/* Manual Starts */}
-            <div className="mobile-card p-3 space-y-1">
-              <div className="flex items-center gap-1.5 text-blue-600">
-                <Zap className="w-3.5 h-3.5 shrink-0" />
-                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 truncate">
-                  Manual Starts
-                </span>
-              </div>
-              <div className="text-sm font-black text-blue-800 truncate">
-                {historyMetrics.manualCount} <span className="text-xs font-semibold text-slate-500">runs</span>
-              </div>
-              <div className="text-[9px] text-blue-700 font-medium truncate">
-                {historyMetrics.manualFormatted}
-              </div>
-            </div>
-          </div>
-
-          {/* Motor Filter Selector */}
-          {motorsList.length > 1 && (
-            <div className="space-y-1.5">
-              <div className="text-[10px] font-black uppercase tracking-wider text-slate-400 px-1">
-                Filter by Motor Unit
-              </div>
-              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
-                <button
-                  type="button"
-                  onClick={() => setHistoryMotorFilter('ALL')}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 ${
-                    historyMotorFilter === 'ALL'
-                      ? 'bg-slate-900 text-white shadow-xs'
-                      : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
-                  }`}
-                >
-                  All Motors ({motorsList.length})
-                </button>
-                {motorsList.map((m) => {
-                  const isSelected = historyMotorFilter === m.id;
-                  return (
-                    <button
-                      key={m.id}
-                      type="button"
-                      onClick={() => setHistoryMotorFilter(m.id)}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 font-mono ${
-                        isSelected
-                          ? 'bg-teal-600 text-white shadow-xs'
-                          : 'bg-white text-slate-700 border border-slate-200 hover:bg-teal-50/50 hover:border-teal-200'
-                      }`}
-                    >
-                      <Zap className={`w-3 h-3 ${isSelected ? 'text-teal-200' : 'text-teal-600'}`} />
-                      <span>{m.motor_code}</span>
-                      <span className={`text-[10px] font-normal ${isSelected ? 'text-teal-100' : 'text-slate-400'}`}>
-                        ({m.name})
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Trigger Filter & View Mode Toggle */}
-          <div className="flex items-center justify-between gap-2 flex-wrap pt-0.5">
-            {/* Trigger Filter Chips */}
-            <div className="flex items-center gap-1 overflow-x-auto scrollbar-none">
-              <button
-                type="button"
-                onClick={() => setHistoryTypeFilter('ALL')}
-                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all shrink-0 ${
-                  historyTypeFilter === 'ALL'
-                    ? 'bg-slate-800 text-white'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                }`}
-              >
-                All
-              </button>
-              <button
-                type="button"
-                onClick={() => setHistoryTypeFilter('SCHEDULED')}
-                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all shrink-0 flex items-center gap-1 ${
-                  historyTypeFilter === 'SCHEDULED'
-                    ? 'bg-teal-600 text-white'
-                    : 'bg-teal-50 text-teal-800 hover:bg-teal-100'
-                }`}
-              >
-                <Calendar className="w-2.5 h-2.5" />
-                <span>Scheduled</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setHistoryTypeFilter('MANUAL')}
-                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all shrink-0 flex items-center gap-1 ${
-                  historyTypeFilter === 'MANUAL'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-blue-50 text-blue-800 hover:bg-blue-100'
-                }`}
-              >
-                <Zap className="w-2.5 h-2.5" />
-                <span>Manual</span>
-              </button>
-            </div>
-
-            {/* View Mode Toggle */}
-            <div className="flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200/80 shrink-0">
-              <button
-                type="button"
-                onClick={() => setHistoryViewMode('SESSIONS')}
-                className={`px-2.5 py-1 rounded-lg text-[10px] font-extrabold transition-all flex items-center gap-1 ${
-                  historyViewMode === 'SESSIONS'
-                    ? 'bg-white text-slate-900 shadow-xs'
-                    : 'text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                <Timer className="w-3 h-3 text-teal-600" />
-                <span>Run Cycles</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setHistoryViewMode('TIMELINE')}
-                className={`px-2.5 py-1 rounded-lg text-[10px] font-extrabold transition-all flex items-center gap-1 ${
-                  historyViewMode === 'TIMELINE'
-                    ? 'bg-white text-slate-900 shadow-xs'
-                    : 'text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                <History className="w-3 h-3 text-slate-600" />
-                <span>Raw Log</span>
-              </button>
-            </div>
-          </div>
-
-          {/* SESSIONS VIEW */}
-          {historyViewMode === 'SESSIONS' && (
-            <div className="space-y-2.5">
-              {filteredSessions.length === 0 ? (
-                <div className="mobile-card p-8 text-center text-xs text-slate-400 space-y-2">
-                  <Timer className="w-8 h-8 text-slate-300 mx-auto" />
-                  <p className="font-bold text-slate-700">No pump run cycles matching filter</p>
-                  <p className="text-[11px] text-slate-400 max-w-xs mx-auto">
-                    Motor start and stop events with calculated durations will appear here automatically.
-                  </p>
-                </div>
-              ) : (
-                filteredSessions.map((session) => {
-                  const isSched = session.triggerType === 'SCHEDULED';
-                  const isManual = session.triggerType === 'MANUAL';
-                  const isRunning = session.isRunning || session.status === 'RUNNING';
-
-                  const startDateObj = parseIsoDate(session.startTime);
-                  const stopDateObj = session.stopTime ? parseIsoDate(session.stopTime) : null;
-
-                  return (
-                    <div
-                      key={session.id}
-                      className={`mobile-card p-3.5 space-y-2.5 border transition-all ${
-                        isRunning
-                          ? 'border-emerald-300 bg-emerald-50/30 ring-1 ring-emerald-400/20'
-                          : 'border-slate-200/80 bg-white'
-                      }`}
-                    >
-                      {/* Top Row: Target Motor Badge, Trigger Source, and Status */}
-                      <div className="flex items-center justify-between gap-2 flex-wrap">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          {/* Motor Tag */}
-                          <span className="px-2 py-0.5 rounded-lg bg-slate-900 text-white text-[10px] font-black font-mono flex items-center gap-1">
-                            <Zap className="w-2.5 h-2.5 text-teal-400" />
-                            {session.motorCode}
-                          </span>
-                          <span className="text-xs font-bold text-slate-800 truncate max-w-[130px] sm:max-w-none">
-                            {session.motorName}
-                          </span>
-                        </div>
-
-                        {/* Trigger Pill */}
-                        <div className="flex items-center gap-1.5">
-                          <span
-                            className={`px-2 py-0.5 rounded-lg text-[10px] font-extrabold flex items-center gap-1 border ${
-                              isSched
-                                ? 'bg-teal-50 text-teal-800 border-teal-200'
-                                : isManual
-                                ? 'bg-blue-50 text-blue-800 border-blue-200'
-                                : 'bg-rose-50 text-rose-800 border-rose-200'
-                            }`}
-                          >
-                            {isSched ? (
-                              <Calendar className="w-2.5 h-2.5 text-teal-600" />
-                            ) : isManual ? (
-                              <Zap className="w-2.5 h-2.5 text-blue-600" />
-                            ) : (
-                              <Shield className="w-2.5 h-2.5 text-rose-600" />
-                            )}
-                            <span>{isSched ? 'SCHEDULED' : isManual ? 'MANUAL START' : 'AUTO-SAFETY'}</span>
-                          </span>
-
-                          {/* Running / Completed Pill */}
-                          {isRunning ? (
-                            <span className="px-2 py-0.5 rounded-lg text-[10px] font-black bg-emerald-50 text-emerald-700 border border-emerald-300 flex items-center gap-1 animate-pulse">
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                              <span>RUNNING</span>
-                            </span>
-                          ) : (
-                            <span className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-slate-100 text-slate-600">
-                              {session.status === 'TRIPPED' ? 'TRIPPED' : 'OFF'}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Middle Row: Start Time, Off Time, and Total Duration */}
-                      <div className="grid grid-cols-3 gap-2 p-2.5 rounded-xl bg-slate-50/80 border border-slate-100 text-center items-center">
-                        {/* Start Time */}
-                        <div className="text-left space-y-0.5">
-                          <div className="text-[9px] font-extrabold uppercase tracking-wider text-slate-400 flex items-center gap-1">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                            <span>Started</span>
-                          </div>
-                          <div className="text-xs font-bold text-slate-900 font-mono">
-                            {startDateObj.toLocaleTimeString([], {
-                              hour: '2-digit',
-                              minute: '2-digit',
-                              second: '2-digit',
-                            })}
-                          </div>
-                        </div>
-
-                        {/* Stop Time */}
-                        <div className="text-left space-y-0.5">
-                          <div className="text-[9px] font-extrabold uppercase tracking-wider text-slate-400 flex items-center gap-1">
-                            <span
-                              className={`w-1.5 h-1.5 rounded-full ${
-                                isRunning ? 'bg-amber-500 animate-ping' : 'bg-slate-400'
-                              }`}
-                            />
-                            <span>Off / Stopped</span>
-                          </div>
-                          <div className="text-xs font-bold text-slate-900 font-mono">
-                            {stopDateObj
-                              ? stopDateObj.toLocaleTimeString([], {
-                                  hour: '2-digit',
-                                  minute: '2-digit',
-                                  second: '2-digit',
-                                })
-                              : 'In Progress...'}
-                          </div>
-                        </div>
-
-                        {/* Total Duration */}
-                        <div className="text-right space-y-0.5">
-                          <div className="text-[9px] font-extrabold uppercase tracking-wider text-teal-700 flex items-center justify-end gap-1">
-                            <Clock className="w-2.5 h-2.5" />
-                            <span>Duration</span>
-                          </div>
-                          <div className="text-xs font-black text-teal-900 font-mono">
-                            {formatDurationSecs(session.durationSeconds)}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* REASON MOTOR CLOSED / STOPPED SECTION */}
-                      {!isRunning ? (
-                        <div
-                          className={`p-2.5 rounded-xl border flex items-start gap-2.5 transition-all ${
-                            session.stopReasonCategory === 'SCHEDULE_END'
-                              ? 'bg-teal-50/70 border-teal-200/80 text-teal-950'
-                              : session.stopReasonCategory === 'MANUAL_STOP'
-                              ? 'bg-blue-50/70 border-blue-200/80 text-blue-950'
-                              : session.stopReasonCategory === 'TANK_FULL'
-                              ? 'bg-amber-50/80 border-amber-200/80 text-amber-950'
-                              : session.stopReasonCategory === 'TURBIDITY'
-                              ? 'bg-purple-50/80 border-purple-200/80 text-purple-950'
-                              : session.stopReasonCategory === 'DRY_RUN' ||
-                                session.stopReasonCategory === 'FAULT' ||
-                                session.stopReasonCategory === 'EMERGENCY_STOP'
-                              ? 'bg-rose-50/80 border-rose-200/80 text-rose-950'
-                              : 'bg-slate-50 border-slate-200 text-slate-900'
-                          }`}
-                        >
-                          <div className="mt-0.5 shrink-0">
-                            {session.stopReasonCategory === 'SCHEDULE_END' ? (
-                              <CheckCircle2 className="w-4 h-4 text-teal-600" />
-                            ) : session.stopReasonCategory === 'MANUAL_STOP' ? (
-                              <Square className="w-4 h-4 text-blue-600" />
-                            ) : session.stopReasonCategory === 'TANK_FULL' ? (
-                              <Droplet className="w-4 h-4 text-amber-600" />
-                            ) : session.stopReasonCategory === 'TURBIDITY' ? (
-                              <Waves className="w-4 h-4 text-purple-600" />
-                            ) : session.stopReasonCategory === 'DRY_RUN' ? (
-                              <AlertTriangle className="w-4 h-4 text-rose-600" />
-                            ) : session.stopReasonCategory === 'EMERGENCY_STOP' ? (
-                              <Shield className="w-4 h-4 text-rose-600" />
-                            ) : (
-                              <CheckCircle2 className="w-4 h-4 text-slate-600" />
-                            )}
-                          </div>
-                          <div className="space-y-0.5 min-w-0 flex-1">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">
-                                Reason Motor Closed:
-                              </span>
-                              <span
-                                className={`px-2 py-0.5 rounded-md text-[10px] font-black tracking-tight border ${
-                                  session.stopReasonCategory === 'SCHEDULE_END'
-                                    ? 'bg-teal-100/80 text-teal-800 border-teal-300'
-                                    : session.stopReasonCategory === 'MANUAL_STOP'
-                                    ? 'bg-blue-100/80 text-blue-800 border-blue-300'
-                                    : session.stopReasonCategory === 'TANK_FULL'
-                                    ? 'bg-amber-100 text-amber-900 border-amber-300'
-                                    : session.stopReasonCategory === 'TURBIDITY'
-                                    ? 'bg-purple-100 text-purple-900 border-purple-300'
-                                    : session.stopReasonCategory === 'DRY_RUN' ||
-                                      session.stopReasonCategory === 'FAULT' ||
-                                      session.stopReasonCategory === 'EMERGENCY_STOP'
-                                    ? 'bg-rose-100 text-rose-900 border-rose-300'
-                                    : 'bg-slate-200 text-slate-800 border-slate-300'
-                                }`}
-                              >
-                                {session.stopReason}
-                              </span>
-                            </div>
-                            {session.stopReasonDetails && (
-                              <p className="text-[11px] text-slate-600 font-medium leading-relaxed">
-                                {session.stopReasonDetails}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="p-2 rounded-xl border border-emerald-200 bg-emerald-50/60 flex items-center gap-2 text-emerald-900">
-                          <div className="w-2 h-2 rounded-full bg-emerald-500 animate-ping shrink-0" />
-                          <span className="text-[11px] font-bold">
-                            Motor is actively running — Live session recording in real-time
-                          </span>
-                        </div>
-                      )}
-
-                      {/* Bottom Row: Context & Date */}
-                      <div className="flex items-center justify-between text-[10px] text-slate-400 font-medium pt-1 border-t border-slate-100">
-                        <span className="truncate">
-                          {session.scheduleName
-                            ? `Timer Schedule: ${session.scheduleName}`
-                            : session.description ||
-                              (isManual ? 'Manual Operator Trigger' : 'Automated Cycle')}
-                        </span>
-                        <span className="shrink-0 font-mono">
-                          {startDateObj.toLocaleDateString([], {
-                            month: 'short',
-                            day: 'numeric',
-                            year: 'numeric',
-                          })}
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          )}
-
-          {/* TIMELINE / RAW LOG VIEW */}
-          {historyViewMode === 'TIMELINE' && (
-            <div className="space-y-2">
-              {filteredEvents.length === 0 ? (
-                <div className="mobile-card p-6 text-center text-xs text-slate-400">
-                  No event records logged yet.
-                </div>
-              ) : (
-                filteredEvents.map((ev) => {
-                  const motorObj = motorsList.find((m) => m.id === ev.motor_id) || motor;
-                  return (
-                    <div
-                      key={ev.id}
-                      className="mobile-card p-3 flex items-center justify-between text-xs gap-2"
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <span
-                          className={`w-2.5 h-2.5 rounded-full shrink-0 ${
-                            ev.event_type === 'STARTED'
-                              ? 'bg-emerald-500'
-                              : ev.event_type === 'STOPPED'
-                              ? 'bg-blue-500'
-                              : 'bg-rose-500'
-                          }`}
-                        />
-                        <div className="min-w-0 space-y-0.5">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="font-bold text-slate-900">{ev.event_type}</span>
-                            {motorObj && (
-                              <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 text-[10px] font-mono font-bold">
-                                {motorObj.motor_code}
-                              </span>
-                            )}
-                            <span
-                              className={`px-1.5 py-0.2 rounded text-[9px] font-extrabold ${
-                                ev.source === 'AUTOMATION'
-                                  ? 'bg-teal-50 text-teal-700'
-                                  : ev.source === 'USER'
-                                  ? 'bg-blue-50 text-blue-700'
-                                  : 'bg-slate-100 text-slate-500'
-                              }`}
-                            >
-                              {ev.source}
-                            </span>
-                          </div>
-                          <div className="text-[10px] text-slate-500 truncate font-medium">
-                            {ev.description ||
-                              (ev.event_payload?.reason
-                                ? `Reason: ${ev.event_payload.reason}`
-                                : 'Normal operation event')}
-                          </div>
-                        </div>
-                      </div>
-                      <span className="text-[10px] font-mono text-slate-500 shrink-0">
-                        {parseIsoDate(ev.occurred_at).toLocaleTimeString([], {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                          second: '2-digit',
-                        })}
-                      </span>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          )}
-        </div>
+        <LatestEventsScreen
+          onBack={() => setActiveTab('HOME')}
+          runSessions={runSessions}
+          filteredSessions={filteredSessions}
+          filteredEvents={filteredEvents}
+          motors={motorsList}
+          historyMotorFilter={historyMotorFilter}
+          setHistoryMotorFilter={setHistoryMotorFilter}
+          historyTypeFilter={historyTypeFilter}
+          setHistoryTypeFilter={setHistoryTypeFilter}
+          historyViewMode={historyViewMode}
+          setHistoryViewMode={setHistoryViewMode}
+          historyMetrics={historyMetrics}
+          onRefresh={() => loadData(true)}
+          isSyncing={isSyncing}
+          parseIsoDate={parseIsoDate}
+          formatDurationSecs={formatDurationSecs}
+        />
       )}
 
       {/* ========================================================================= */}
-      {/* TAB 4: SETTINGS (OPERATIONAL SAFETY THRESHOLDS & ADMIN WORK) */}
+      {/* TAB 4: SETTINGS (FULL OPERATOR CONTROL & ADVANCED ADMIN) */}
       {/* ========================================================================= */}
       {activeTab === 'SETTINGS' && (
-        <div className="space-y-4">
+        <div className="space-y-4 animate-fade-in">
           <div className="flex items-center justify-between pt-1">
             <div>
               <h2 className="text-base font-black text-slate-900 tracking-tight leading-tight">
@@ -2204,18 +1403,18 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
             <button
               onClick={() => loadData(true)}
               disabled={isSyncing}
-              className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors shadow-xs"
+              className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors cursor-pointer"
               title="Refresh Settings"
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin text-teal-600' : ''}`} />
+              <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin text-blue-600' : ''}`} />
             </button>
           </div>
 
-          {/* 1. OPERATIONAL SAFETY THRESHOLDS CARD (FULL USER ACCESS) */}
-          <div className="mobile-card p-4 space-y-4 border-2 border-teal-500/20">
+          {/* 1. OPERATIONAL SAFETY THRESHOLDS CARD */}
+          <div className="mobile-card p-4 space-y-4 border-2 border-blue-500/20">
             <div className="flex items-center justify-between pb-2 border-b border-slate-100">
               <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-xl bg-teal-50 text-teal-700 flex items-center justify-center">
+                <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-700 flex items-center justify-center">
                   <SlidersHorizontal className="w-4 h-4" />
                 </div>
                 <div>
@@ -2225,7 +1424,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                   <p className="text-[10px] text-slate-400">Set automatic stop levels &amp; sensor trips</p>
                 </div>
               </div>
-              <span className="px-2 py-0.5 rounded-lg bg-teal-100 text-teal-800 text-[10px] font-black">
+              <span className="px-2 py-0.5 rounded-lg bg-blue-100 text-blue-800 text-[10px] font-black">
                 OPERATOR CONTROL
               </span>
             </div>
@@ -2234,17 +1433,14 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-black text-slate-800 flex items-center gap-1.5">
-                  <Waves className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+                  <Waves className="w-3.5 h-3.5 text-blue-600 shrink-0" />
                   <span>Tank Auto-Stop Level</span>
                 </label>
                 <div className="flex items-center gap-1">
-                  <span className="text-sm font-black text-teal-700 font-mono">{tankStopThreshold}%</span>
+                  <span className="text-sm font-black text-blue-700 font-mono">{tankStopThreshold}%</span>
                   <span className="text-[10px] text-slate-400 font-medium">Cutoff</span>
                 </div>
               </div>
-              <p className="text-[10px] text-slate-500">
-                Water motor will automatically stop pumping when overhead tank reaches this level to prevent overflow.
-              </p>
               <div className="flex items-center gap-3">
                 <input
                   type="range"
@@ -2253,7 +1449,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                   step="1"
                   value={tankStopThreshold}
                   onChange={(e) => setTankStopThreshold(Number(e.target.value))}
-                  className="flex-1 accent-teal-600 cursor-pointer h-2 bg-slate-100 rounded-lg"
+                  className="flex-1 accent-blue-600 cursor-pointer h-2 bg-slate-100 rounded-lg"
                 />
                 <input
                   type="number"
@@ -2266,7 +1462,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               </div>
             </div>
 
-            {/* THRESHOLD 2: SUMP / SOURCE DRY-RUN CUTOFF */}
+            {/* THRESHOLD 2: SUMP DRY-RUN CUTOFF */}
             <div className="space-y-1.5 pt-2 border-t border-slate-100">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-black text-slate-800 flex items-center gap-1.5">
@@ -2278,9 +1474,6 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                   <span className="text-[10px] text-slate-400 font-medium">Min Source</span>
                 </div>
               </div>
-              <p className="text-[10px] text-slate-500">
-                Motor shuts down immediately if underground sump or borewell drops below this mark to prevent air suction &amp; motor burn.
-              </p>
               <div className="flex items-center gap-3">
                 <input
                   type="range"
@@ -2302,7 +1495,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               </div>
             </div>
 
-            {/* THRESHOLD 3: WATER TURBIDITY SAFETY TRIP */}
+            {/* THRESHOLD 3: WATER TURBIDITY */}
             <div className="space-y-1.5 pt-2 border-t border-slate-100">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-black text-slate-800 flex items-center gap-1.5">
@@ -2314,9 +1507,6 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                   <span className="text-[10px] text-slate-400 font-medium">Max Murkiness</span>
                 </div>
               </div>
-              <p className="text-[10px] text-slate-500">
-                Automatically trips the pump if incoming muddy or turbid water exceeds this clarity limit.
-              </p>
               <div className="flex items-center gap-3">
                 <input
                   type="range"
@@ -2338,7 +1528,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               </div>
             </div>
 
-            {/* TOGGLES: AUTO-STOP & OFFLINE ALERTS */}
+            {/* TOGGLES */}
             <div className="space-y-2 pt-2 border-t border-slate-100">
               <label className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-200/60 cursor-pointer">
                 <div>
@@ -2349,7 +1539,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                   type="checkbox"
                   checked={autoStopTankFull}
                   onChange={(e) => setAutoStopTankFull(e.target.checked)}
-                  className="w-4 h-4 accent-teal-600 rounded cursor-pointer"
+                  className="w-4 h-4 accent-blue-600 rounded cursor-pointer"
                 />
               </label>
 
@@ -2362,17 +1552,17 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                   type="checkbox"
                   checked={offlineAlertEnabled}
                   onChange={(e) => setOfflineAlertEnabled(e.target.checked)}
-                  className="w-4 h-4 accent-teal-600 rounded cursor-pointer"
+                  className="w-4 h-4 accent-blue-600 rounded cursor-pointer"
                 />
               </label>
             </div>
 
-            {/* SAVE OPERATIONAL THRESHOLDS BUTTON */}
+            {/* SAVE BUTTON */}
             <button
               type="button"
               onClick={handleSaveOperationalSettings}
               disabled={isSavingSettings || !isOperator}
-              className="w-full py-3 rounded-2xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-black flex items-center justify-center gap-2 shadow-md shadow-teal-600/25 transition-all cursor-pointer disabled:opacity-50"
+              className="w-full py-3 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-black flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50"
             >
               {isSavingSettings ? (
                 <RefreshCw className="w-4 h-4 animate-spin" />
@@ -2383,7 +1573,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
             </button>
           </div>
 
-          {/* 2. AUTOMATION SHORTCUTS */}
+          {/* 2. AUTOMATION & HARDWARE SHORTCUTS */}
           <div className="space-y-2">
             <h4 className="text-xs font-black uppercase tracking-wider text-slate-400 px-1">
               Automation &amp; Hardware Controls
@@ -2393,13 +1583,13 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               <button
                 type="button"
                 onClick={() => setIsScheduleModalOpen(true)}
-                className="w-full py-2.5 px-3 rounded-xl bg-teal-50 hover:bg-teal-100 text-teal-800 text-xs font-bold flex items-center justify-between transition-colors border border-teal-200/60 cursor-pointer"
+                className="w-full py-2.5 px-3 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-800 text-xs font-bold flex items-center justify-between transition-colors border border-blue-200/60 cursor-pointer"
               >
                 <div className="flex items-center gap-2">
-                  <Calendar className="w-4 h-4 text-teal-600" />
+                  <Calendar className="w-4 h-4 text-blue-600" />
                   <span>Manage Automation Schedules</span>
                 </div>
-                <span className="text-[10px] font-bold text-teal-700 bg-white px-2 py-0.5 rounded-md border border-teal-200">
+                <span className="text-[10px] font-bold text-blue-700 bg-white px-2 py-0.5 rounded-md border border-blue-200">
                   {schedules.length} Slots
                 </span>
               </button>
@@ -2436,7 +1626,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
             </div>
           </div>
 
-          {/* 3. BUSINESS ADMIN & USER MANAGEMENT SECTION */}
+          {/* 3. BUSINESS ADMIN SECTION */}
           {isAdmin && (
             <div className="space-y-2">
               <h4 className="text-xs font-black uppercase tracking-wider text-purple-700 px-1 flex items-center gap-1.5">
@@ -2460,7 +1650,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                 <button
                   type="button"
                   onClick={() => setIsAdminModalOpen(true)}
-                  className="w-full py-3 rounded-2xl bg-slate-900 hover:bg-purple-900 text-white text-xs font-black flex items-center justify-center gap-2 shadow-md transition-all cursor-pointer"
+                  className="w-full py-3 rounded-2xl bg-slate-900 hover:bg-purple-900 text-white text-xs font-black flex items-center justify-center gap-2 transition-all cursor-pointer"
                 >
                   <Crown className="w-4 h-4 text-purple-300" />
                   <span>MANAGE USERS &amp; SUBSCRIPTION PLANS</span>
@@ -2485,7 +1675,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               <button
                 type="button"
                 onClick={onAdminSwitch}
-                className="w-full py-2.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center gap-2 transition-colors border border-blue-200"
+                className="w-full py-2.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center gap-2 transition-colors border border-blue-200 cursor-pointer"
               >
                 <Shield className="w-4 h-4" />
                 <span>Switch to Advanced Admin Console</span>
@@ -2505,12 +1695,13 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
       )}
 
       {/* ========================================================================= */}
-      {/* BOTTOM NAVIGATION DOCK (FLOATING ELEVATED POWER BUTTON) */}
+      {/* BOTTOM NAVIGATION DOCK */}
       {/* ========================================================================= */}
       <MobileNavDock
         activeTab={activeTab}
         onTabChange={(t) => {
           setActiveTab(t);
+          setActiveServiceScreen(null);
           loadData();
         }}
         isMotorRunning={isMotorRunning}
@@ -2571,8 +1762,8 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
 
       {/* Schedule Delete Confirmation Popup */}
       {scheduleToDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in font-['Plus_Jakarta_Sans',sans-serif]">
-          <div className="bg-white w-full max-w-sm rounded-3xl p-5 shadow-2xl border border-slate-200 space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in font-['Poppins',sans-serif]">
+          <div className="bg-white w-full max-w-sm rounded-3xl p-5 border border-slate-200 space-y-4">
             <div className="flex items-center gap-3 text-rose-600">
               <div className="w-10 h-10 rounded-2xl bg-rose-50 flex items-center justify-center shrink-0">
                 <Trash2 className="w-5 h-5" />
@@ -2594,14 +1785,14 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               <button
                 type="button"
                 onClick={() => setScheduleToDelete(null)}
-                className="flex-1 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold"
+                className="flex-1 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={() => handleDeleteScheduleDirect(scheduleToDelete)}
-                className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-black shadow-md shadow-rose-600/25"
+                className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-black cursor-pointer"
               >
                 Confirm Delete
               </button>
@@ -2612,4 +1803,3 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
     </div>
   );
 };
-

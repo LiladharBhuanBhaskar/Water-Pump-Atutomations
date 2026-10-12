@@ -15,7 +15,6 @@ import {
   Wifi,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { Button } from '../components/common/Button';
 import { isNativeCapacitorApp, DEFAULT_CLOUDFLARE_URL } from '../services/api';
 
 export const Login: React.FC = () => {
@@ -133,53 +132,49 @@ export const Login: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-center items-center p-4 sm:p-6 relative overflow-hidden selection:bg-cyan-500 selection:text-black">
-      {/* Background Ambience */}
-      <div className="absolute -top-32 -left-32 w-80 h-80 sm:w-96 sm:h-96 bg-cyan-500/15 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute -bottom-32 -right-32 w-80 h-80 sm:w-96 sm:h-96 bg-blue-600/15 rounded-full blur-3xl pointer-events-none" />
-
-      <div className="w-full max-w-md space-y-6 z-10">
+    <div className="min-h-screen bg-[#f8fafc] text-slate-900 flex flex-col justify-center items-center p-4 sm:p-6 pt-[calc(1.25rem+env(safe-area-inset-top,0px))] pb-[calc(1.25rem+env(safe-area-inset-bottom,0px))] font-['Poppins',sans-serif] selection:bg-blue-500 selection:text-white">
+      <div className="w-full max-w-md space-y-5">
         {/* Branding Header */}
-        <div className="text-center space-y-2">
-          <div className="inline-flex w-16 h-16 rounded-2xl bg-gradient-to-tr from-cyan-500 to-blue-600 items-center justify-center shadow-xl shadow-cyan-500/25 ring-1 ring-cyan-400/30">
-            <Droplets className="w-9 h-9 text-white animate-pulse" />
+        <div className="text-center space-y-1.5">
+          <div className="inline-flex w-14 h-14 rounded-2xl bg-blue-600 items-center justify-center border border-blue-500 text-white mb-1">
+            <Droplets className="w-7 h-7" />
           </div>
-          <h1 className="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-white via-slate-100 to-cyan-400 bg-clip-text text-transparent">
+          <h1 className="text-2xl font-black tracking-tight text-slate-900">
             HydraControl
           </h1>
-          <p className="text-xs text-slate-400 font-medium">
-            Smart Water Motor Automation & Protection System
+          <p className="text-xs text-slate-500 font-medium">
+            Smart Water Motor Automation &amp; Protection System
           </p>
         </div>
 
         {/* 2 Primary Access Cards: Admin vs Motor Operator */}
-        <div className="space-y-2.5">
-          <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 text-center flex items-center justify-center gap-1.5">
-            <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
-            Select Your Account
+        <div className="space-y-2">
+          <p className="text-[11px] font-black uppercase tracking-wider text-slate-400 text-center flex items-center justify-center gap-1.5">
+            <Sparkles className="w-3.5 h-3.5 text-blue-600" />
+            <span>Select Account Preset</span>
           </p>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-2.5">
             {/* ID 1: ADMIN */}
             <button
               type="button"
               onClick={() => handleSelectRole('ADMIN')}
-              className={`p-3.5 rounded-2xl border text-left transition-all duration-200 relative overflow-hidden ${
+              className={`p-3.5 rounded-2xl border text-left transition-all duration-200 relative cursor-pointer ${
                 selectedRole === 'ADMIN'
-                  ? 'bg-gradient-to-b from-purple-950/70 to-slate-900 border-purple-500 ring-2 ring-purple-500/40 shadow-lg shadow-purple-500/20'
-                  : 'bg-slate-900/80 hover:bg-slate-850 border-slate-800 hover:border-slate-700'
+                  ? 'bg-purple-50/70 border-purple-500 ring-1 ring-purple-500/30'
+                  : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-700'
               }`}
             >
               <div className="flex items-center justify-between mb-2">
-                <div className="w-8 h-8 rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center border border-purple-500/30">
+                <div className="w-8 h-8 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center">
                   <Shield className="w-4 h-4" />
                 </div>
                 {selectedRole === 'ADMIN' && (
-                  <CheckCircle2 className="w-4 h-4 text-purple-400" />
+                  <CheckCircle2 className="w-4 h-4 text-purple-600" />
                 )}
               </div>
-              <div className="font-bold text-sm text-white">1. Admin ID</div>
-              <div className="text-[11px] text-slate-400 mt-0.5 leading-tight">
-                Full settings, rules, logs & fleet
+              <div className="font-bold text-xs text-slate-900">1. Admin ID</div>
+              <div className="text-[10px] text-slate-500 mt-0.5 leading-tight">
+                Full settings, rules, fleet &amp; plans
               </div>
             </button>
 
@@ -187,40 +182,40 @@ export const Login: React.FC = () => {
             <button
               type="button"
               onClick={() => handleSelectRole('USER')}
-              className={`p-3.5 rounded-2xl border text-left transition-all duration-200 relative overflow-hidden ${
+              className={`p-3.5 rounded-2xl border text-left transition-all duration-200 relative cursor-pointer ${
                 selectedRole === 'USER'
-                  ? 'bg-gradient-to-b from-cyan-950/70 to-slate-900 border-cyan-500 ring-2 ring-cyan-500/40 shadow-lg shadow-cyan-500/20'
-                  : 'bg-slate-900/80 hover:bg-slate-850 border-slate-800 hover:border-slate-700'
+                  ? 'bg-blue-50/70 border-blue-500 ring-1 ring-blue-500/30'
+                  : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-700'
               }`}
             >
               <div className="flex items-center justify-between mb-2">
-                <div className="w-8 h-8 rounded-xl bg-cyan-500/20 text-cyan-400 flex items-center justify-center border border-cyan-500/30">
+                <div className="w-8 h-8 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center">
                   <User className="w-4 h-4" />
                 </div>
                 {selectedRole === 'USER' && (
-                  <CheckCircle2 className="w-4 h-4 text-cyan-400" />
+                  <CheckCircle2 className="w-4 h-4 text-blue-600" />
                 )}
               </div>
-              <div className="font-bold text-sm text-white">2. User ID</div>
-              <div className="text-[11px] text-slate-400 mt-0.5 leading-tight">
-                Motor controls, tank & schedules
+              <div className="font-bold text-xs text-slate-900">2. Operator ID</div>
+              <div className="text-[10px] text-slate-500 mt-0.5 leading-tight">
+                Motor controls, tank &amp; schedules
               </div>
             </button>
           </div>
         </div>
 
         {/* Login Form Card */}
-        <div className="glass-panel p-6 sm:p-7 rounded-3xl border border-slate-800 shadow-2xl backdrop-blur-xl bg-slate-900/80">
-          <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="p-5 sm:p-6 rounded-3xl border border-slate-200 bg-white">
+          <form onSubmit={handleSubmit} className="space-y-3.5">
             {error && (
-              <div className="p-3.5 rounded-xl bg-rose-950/80 border border-rose-800/60 text-rose-300 text-xs flex items-center gap-2.5 animate-shake">
-                <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0" />
+              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-rose-500 flex-shrink-0" />
                 <span>{error}</span>
               </div>
             )}
 
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold uppercase tracking-wider text-slate-300">
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-slate-700">
                 Email Address
               </label>
               <div className="relative">
@@ -230,14 +225,14 @@ export const Login: React.FC = () => {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="admin@hydracontrol.io or operator@hydracontrol.io"
-                  className="glass-input w-full pl-10 pr-4 py-2.5 rounded-xl text-sm"
+                  className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50/50 focus:bg-white focus:border-blue-500 focus:outline-none text-xs font-medium text-slate-900 transition-colors"
                   required
                 />
               </div>
             </div>
 
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold uppercase tracking-wider text-slate-300">
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-slate-700">
                 Password
               </label>
               <div className="relative">
@@ -247,71 +242,73 @@ export const Login: React.FC = () => {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••••••"
-                  className="glass-input w-full pl-10 pr-4 py-2.5 rounded-xl text-sm"
+                  className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50/50 focus:bg-white focus:border-blue-500 focus:outline-none text-xs font-medium text-slate-900 transition-colors"
                   required
                 />
               </div>
             </div>
 
-            <Button
+            <button
               type="submit"
-              variant="primary"
-              size="lg"
-              loading={loading}
-              className="w-full mt-3 py-3 rounded-xl shadow-lg shadow-cyan-500/25 font-bold tracking-wide"
-              icon={<ArrowRight className="w-4 h-4" />}
+              disabled={loading}
+              className="w-full mt-2 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer disabled:opacity-50"
             >
-              Sign In to HydraControl
-            </Button>
+              {loading ? (
+                <RefreshCw className="w-4 h-4 animate-spin" />
+              ) : (
+                <ArrowRight className="w-4 h-4" />
+              )}
+              <span>{loading ? 'Authenticating...' : 'Sign In to HydraControl'}</span>
+            </button>
           </form>
 
           {/* Server Connection Settings Accordion (Essential for APK / LAN / Wi-Fi) */}
-          <div className="mt-5 pt-4 border-t border-slate-800/80">
+          <div className="mt-4 pt-3.5 border-t border-slate-100">
             <button
               type="button"
               onClick={() => setShowServerConfig(!showServerConfig)}
-              className="w-full flex items-center justify-between text-xs text-slate-400 hover:text-cyan-400 transition-colors py-1"
+              className="w-full flex items-center justify-between text-xs text-slate-500 hover:text-blue-600 transition-colors py-1 cursor-pointer"
             >
-              <div className="flex items-center gap-2">
-                <Wifi className="w-3.5 h-3.5 text-cyan-400" />
-                <span className="font-semibold">Server Connection (Wi-Fi / Cloud)</span>
+              <div className="flex items-center gap-1.5">
+                <Wifi className="w-3.5 h-3.5 text-blue-600" />
+                <span className="font-bold">Server Connection (Wi-Fi / Cloud)</span>
               </div>
-              <span className="text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded-full font-mono">
+              <span className="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-mono font-medium">
                 {showServerConfig ? 'Hide' : 'Configure IP'}
               </span>
             </button>
 
             {showServerConfig && (
-              <div className="mt-3 p-3.5 rounded-2xl bg-slate-950/70 border border-slate-800/80 space-y-3 animate-fadeIn">
+              <div className="mt-2.5 p-3 rounded-2xl bg-slate-50 border border-slate-200 space-y-2.5">
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                    <Globe className="w-3 h-3 text-cyan-400" /> Backend Host URL
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+                    <Globe className="w-3 h-3 text-blue-600" /> Backend Host URL
                   </label>
-                  <div className="flex gap-2">
+                  <div className="flex gap-1.5">
                     <input
                       type="text"
                       value={serverUrl}
                       onChange={(e) => handleSaveServerUrl(e.target.value)}
                       placeholder={DEFAULT_CLOUDFLARE_URL}
-                      className="glass-input flex-1 px-3 py-2 rounded-xl text-xs font-mono"
+                      className="flex-1 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-mono text-slate-800 focus:outline-none focus:border-blue-500"
                     />
                     <button
                       type="button"
                       onClick={handleTestConnection}
                       disabled={isTestingServer}
-                      className="px-3 py-2 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 text-xs font-semibold border border-cyan-500/30 flex items-center gap-1.5 disabled:opacity-50 transition-all"
+                      className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1 disabled:opacity-50 transition-colors cursor-pointer"
                     >
                       {isTestingServer ? (
                         <RefreshCw className="w-3.5 h-3.5 animate-spin" />
                       ) : (
                         <Check className="w-3.5 h-3.5" />
                       )}
-                      Test
+                      <span>Test</span>
                     </button>
                     <button
                       type="button"
                       onClick={handleResetServerUrl}
-                      className="px-2.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium border border-slate-700 transition-all"
+                      className="px-2.5 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-600 text-xs font-medium border border-slate-200 transition-colors cursor-pointer"
                       title="Reset to default Cloudflare tunnel"
                     >
                       Reset
@@ -321,32 +318,32 @@ export const Login: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => handleSaveServerUrl(DEFAULT_CLOUDFLARE_URL)}
-                      className="px-2.5 py-1 rounded-lg bg-cyan-950/60 hover:bg-cyan-900/60 border border-cyan-700/50 text-cyan-300 text-[10px] font-medium"
+                      className="px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 text-[10px] font-bold cursor-pointer"
                     >
-                      🌐 Use Cloudflare (Worldwide)
+                      🌐 Cloudflare (Worldwide)
                     </button>
                     <button
                       type="button"
                       onClick={() => handleSaveServerUrl('http://192.168.1.13:8000')}
-                      className="px-2.5 py-1 rounded-lg bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700 text-slate-300 text-[10px] font-medium"
+                      className="px-2.5 py-1 rounded-lg bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 text-[10px] font-medium cursor-pointer"
                     >
-                      📶 Use Local Wi-Fi
+                      📶 Local Wi-Fi
                     </button>
                   </div>
                 </div>
 
                 {serverTestStatus !== 'IDLE' && (
                   <div
-                    className={`p-2.5 rounded-xl text-xs flex items-center gap-2 ${
+                    className={`p-2 rounded-xl text-xs flex items-center gap-2 ${
                       serverTestStatus === 'SUCCESS'
-                        ? 'bg-emerald-950/80 border border-emerald-800/60 text-emerald-300'
-                        : 'bg-rose-950/80 border border-rose-800/60 text-rose-300'
+                        ? 'bg-emerald-50 border border-emerald-200 text-emerald-800 font-medium'
+                        : 'bg-rose-50 border border-rose-200 text-rose-800'
                     }`}
                   >
                     {serverTestStatus === 'SUCCESS' ? (
-                      <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
                     ) : (
-                      <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0" />
+                      <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0" />
                     )}
                     <span className="text-[11px]">{serverTestMessage}</span>
                   </div>
@@ -357,9 +354,9 @@ export const Login: React.FC = () => {
         </div>
 
         {/* Footer info */}
-        <div className="text-center text-[11px] text-slate-500 space-y-1">
+        <div className="text-center text-[11px] text-slate-400 space-y-0.5">
           <p>Local Controller Safety Priority &bull; Real-Time IoT Cloud</p>
-          <p className="text-slate-600">APK / Android Mobile App Ready</p>
+          <p className="text-slate-400">APK / Android Mobile App Ready</p>
         </div>
       </div>
     </div>
