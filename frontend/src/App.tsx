@@ -82,7 +82,7 @@ const MainLayout: React.FC = () => {
   // Mobile App View (HOME mode matching provided screenshots pixel-by-pixel)
   if (viewMode === 'HOME') {
     return (
-      <div className="min-h-screen bg-white text-slate-900 flex flex-col selection:bg-teal-500 selection:text-white">
+      <div className="min-h-screen bg-[#f8fafc] text-slate-900 flex flex-col selection:bg-blue-600 selection:text-white font-sans">
         <MobileHeader
           wsConnected={wsConnected}
           onAvatarClick={() => {
