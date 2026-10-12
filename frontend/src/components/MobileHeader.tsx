@@ -1,19 +1,24 @@
 import React, { useState, useEffect } from 'react';
-import { Droplets, Volume2, VolumeX } from 'lucide-react';
+import { Menu, Droplet, Bell, Volume2, VolumeX, LogOut, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { audioAlert } from '../utils/audioAlert';
 
 interface MobileHeaderProps {
   wsConnected: boolean;
   onAvatarClick?: () => void;
+  onOpenNotifications?: () => void;
+  onMenuClick?: () => void;
 }
 
 export const MobileHeader: React.FC<MobileHeaderProps> = ({
   wsConnected,
   onAvatarClick,
+  onOpenNotifications,
+  onMenuClick,
 }) => {
-  const { user } = useAuth();
-  const initial = user?.name ? user.name.charAt(0).toUpperCase() : 'U';
+  const { user, logout } = useAuth();
+  const initial = user?.name ? user.name.charAt(0).toUpperCase() : 'D';
+  const [isMenuOpen, setIsMenuOpen] = useState<boolean>(false);
   const [audioUnlocked, setAudioUnlocked] = useState<boolean>(audioAlert.isUnlocked());
 
   useEffect(() => {
@@ -28,65 +33,125 @@ export const MobileHeader: React.FC<MobileHeaderProps> = ({
   };
 
   return (
-    <header className="sticky top-0 z-40 bg-white/90 backdrop-blur-xl px-4 py-2.5 flex items-center justify-between gap-2 border-b border-slate-200/60 max-w-lg mx-auto w-full shadow-[0_2px_10px_rgba(0,0,0,0.02)]">
-      {/* Brand */}
-      <div className="flex items-center gap-2 flex-shrink-0">
-        <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-teal-500 to-emerald-500 flex items-center justify-center shadow-md shadow-teal-500/20 flex-shrink-0">
-          <Droplets className="w-4.5 h-4.5 text-white" />
-        </div>
-        <div className="flex flex-col">
-          <span className="font-black text-base tracking-tight text-slate-900 leading-none">
-            HydraControl
-          </span>
-          <span className="text-[9px] font-bold tracking-wider text-teal-600 uppercase leading-tight mt-0.5">
-            Smart Motor OS
-          </span>
-        </div>
-      </div>
-
-      {/* Right Controls (Audio Unlock + Live Capsule + Profile Avatar) */}
-      <div className="flex items-center gap-2 flex-shrink-0">
-        {/* Audio Alert Status / Test Button */}
+    <>
+      <header className="sticky top-0 z-40 bg-white px-4 pt-[calc(0.625rem+env(safe-area-inset-top,0px))] pb-2.5 flex items-center justify-between gap-2 border-b border-slate-200 max-w-lg mx-auto w-full">
+        {/* Left Hamburger Menu Button */}
         <button
           type="button"
-          onClick={handleToggleAudio}
-          title={audioUnlocked ? 'Audio alerts active (Click to test sound)' : 'Audio muted - Click to enable browser buzzer'}
-          className={`flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-bold transition-all ${
-            audioUnlocked
-              ? 'bg-teal-50 text-teal-700 border border-teal-200/80 hover:bg-teal-100'
-              : 'bg-amber-50 text-amber-700 border border-amber-200/80 hover:bg-amber-100 animate-pulse'
-          }`}
+          onClick={() => {
+            if (onMenuClick) onMenuClick();
+            else setIsMenuOpen(true);
+          }}
+          className="p-1.5 rounded-xl hover:bg-slate-100 text-slate-700 transition-colors flex-shrink-0 cursor-pointer"
+          title="Open Menu"
         >
-          {audioUnlocked ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
-          <span className="hidden xs:inline">{audioUnlocked ? 'Buzzer ON' : 'Enable Audio'}</span>
+          <Menu className="w-6 h-6 stroke-[2.2]" />
         </button>
 
-        {/* Stream Status Capsule Badge */}
-        {wsConnected ? (
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200/90 text-[11px] font-bold text-emerald-700 shadow-xs">
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+        {/* Center Brand */}
+        <div className="flex items-center gap-2 flex-1 justify-start ml-1">
+          <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center flex-shrink-0">
+            <Droplet className="w-5 h-5 text-white fill-current" />
+          </div>
+          <div className="flex flex-col">
+            <span className="font-bold text-base tracking-tight text-slate-900 leading-none">
+              HydraControl
             </span>
-            <span className="tracking-wide">LIVE</span>
+            <span className="text-[9px] font-semibold tracking-wider text-slate-500 uppercase leading-tight mt-0.5">
+              SMART MOTOR OS
+            </span>
           </div>
-        ) : (
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-900 border border-slate-800 text-[11px] font-semibold text-slate-300 shadow-xs">
-            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>
-            <span className="text-[10px] text-amber-300 font-bold tracking-wider">SYNCING</span>
-          </div>
-        )}
+        </div>
 
-        {/* User Avatar Circle */}
-        <button
-          type="button"
-          onClick={onAvatarClick}
-          title={user?.name || 'User Profile'}
-          className="w-8 h-8 rounded-full bg-gradient-to-tr from-purple-500 to-indigo-600 text-white font-bold text-xs flex items-center justify-center shadow-md shadow-purple-500/20 ring-2 ring-white hover:scale-105 active:scale-95 transition-all flex-shrink-0"
-        >
-          {initial}
-        </button>
-      </div>
-    </header>
+        {/* Right Controls: Stream Badge + Notification Bell + Avatar */}
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {/* Live WS Status Dot */}
+          <span
+            className={`w-2 h-2 rounded-full ${
+              wsConnected ? 'bg-emerald-500' : 'bg-amber-400 animate-pulse'
+            }`}
+            title={wsConnected ? 'Cloud WebSocket Live' : 'Reconnecting...'}
+          />
+
+          {/* Notification Bell with Badge */}
+          <button
+            type="button"
+            onClick={onOpenNotifications || handleToggleAudio}
+            className="p-1.5 rounded-full hover:bg-slate-100 text-slate-700 relative transition-colors cursor-pointer"
+            title="Notifications & Alerts"
+          >
+            <Bell className="w-5 h-5 stroke-[2.2]" />
+            <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-rose-500 ring-2 ring-white" />
+          </button>
+
+          {/* User Avatar Circle */}
+          <button
+            type="button"
+            onClick={onAvatarClick || (() => setIsMenuOpen(true))}
+            title={user?.name || user?.email || 'User Profile'}
+            className="w-8 h-8 rounded-full bg-blue-600 text-white font-bold text-sm flex items-center justify-center ring-2 ring-slate-100 hover:bg-blue-700 active:scale-95 transition-all flex-shrink-0 cursor-pointer"
+          >
+            {initial}
+          </button>
+        </div>
+      </header>
+
+      {/* Quick Drawer / Modal on Hamburger Menu */}
+      {isMenuOpen && (
+        <div className="fixed inset-0 z-50 flex items-start justify-start p-4 bg-slate-950/40 backdrop-blur-xs font-sans">
+          <div className="bg-white w-full max-w-xs rounded-2xl p-5 border border-slate-200 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold">
+                  {initial}
+                </div>
+                <div>
+                  <div className="text-xs font-bold text-slate-900">{user?.name || 'Operator'}</div>
+                  <div className="text-[10px] text-slate-500">{user?.email}</div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsMenuOpen(false)}
+                className="p-1 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={() => {
+                  handleToggleAudio();
+                  setIsMenuOpen(false);
+                }}
+                className="w-full p-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-800 text-xs font-semibold flex items-center justify-between border border-slate-200 cursor-pointer"
+              >
+                <div className="flex items-center gap-2">
+                  {audioUnlocked ? <Volume2 className="w-4 h-4 text-emerald-600" /> : <VolumeX className="w-4 h-4 text-amber-600" />}
+                  <span>Buzzer Audio Alerts</span>
+                </div>
+                <span className="text-[10px] font-bold text-slate-500">
+                  {audioUnlocked ? 'ENABLED' : 'TEST SOUND'}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setIsMenuOpen(false);
+                  logout();
+                }}
+                className="w-full p-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-semibold flex items-center gap-2 border border-rose-200 cursor-pointer"
+              >
+                <LogOut className="w-4 h-4" />
+                <span>Sign Out</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 };
