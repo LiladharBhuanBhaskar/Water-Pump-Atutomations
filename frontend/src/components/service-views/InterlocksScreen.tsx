@@ -10,6 +10,7 @@ import {
   Cpu,
   Lock,
 } from 'lucide-react';
+import { useLanguage } from '../../context/LanguageContext';
 
 interface InterlocksScreenProps {
   onBack: () => void;
@@ -38,6 +39,7 @@ export const InterlocksScreen: React.FC<InterlocksScreenProps> = ({
   onRefresh,
   isSyncing,
 }) => {
+  const { t } = useLanguage();
   // Determine interlock states
   const isTankFull = tankLevel >= tankStopThreshold;
   const isDryRun = sumpLevel <= sumpDryRunThreshold;
@@ -56,7 +58,7 @@ export const InterlocksScreen: React.FC<InterlocksScreenProps> = ({
   const scorePct = Math.round((healthyCount / totalInterlocks) * 100);
 
   return (
-    <div className="space-y-4 animate-fade-in font-['Poppins',sans-serif]">
+    <div className="space-y-4 animate-fade-in font-sans pb-dock-clearance">
       {/* Top Header Bar */}
       <div className="flex items-center justify-between pb-2 border-b border-slate-100">
         <button
@@ -65,7 +67,7 @@ export const InterlocksScreen: React.FC<InterlocksScreenProps> = ({
           className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4" />
-          <span>Back to Home</span>
+          <span>{t.backToHome}</span>
         </button>
 
         <div className="flex items-center gap-2">
@@ -76,7 +78,7 @@ export const InterlocksScreen: React.FC<InterlocksScreenProps> = ({
                 : 'bg-amber-50 border-amber-200 text-amber-700'
             }`}
           >
-            {scorePct}% Safety Interlocks OK
+            {scorePct === 100 ? t.allInterlocksHealthy : t.interlockTripped}
           </span>
           <button
             type="button"
@@ -97,9 +99,9 @@ export const InterlocksScreen: React.FC<InterlocksScreenProps> = ({
               <Lock className="w-6 h-6" />
             </div>
             <div>
-              <h2 className="text-base font-black text-slate-900 leading-tight">Interlocks &amp; Safety Guard</h2>
+              <h2 className="text-base font-black text-slate-900 leading-tight">{t.interlocksTitle}</h2>
               <p className="text-xs text-slate-500 font-medium mt-0.5">
-                Hardware-enforced local protection rules with authoritative cutoff
+                {t.interlocksSubtitle}
               </p>
             </div>
           </div>

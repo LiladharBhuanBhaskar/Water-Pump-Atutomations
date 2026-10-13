@@ -11,6 +11,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { ScheduleResponse, Motor } from '../../types';
+import { useLanguage } from '../../context/LanguageContext';
 
 interface SchedulesScreenProps {
   onBack: () => void;
@@ -35,10 +36,11 @@ export const SchedulesScreen: React.FC<SchedulesScreenProps> = ({
   onRefresh,
   isSyncing,
 }) => {
+  const { t, language } = useLanguage();
   const activeCount = schedules.filter((s) => s.is_active).length;
 
   return (
-    <div className="space-y-4 animate-fade-in font-['Poppins',sans-serif]">
+    <div className="space-y-4 animate-fade-in font-sans pb-dock-clearance">
       {/* Top Header Bar */}
       <div className="flex items-center justify-between pb-2 border-b border-slate-100">
         <button
@@ -47,18 +49,20 @@ export const SchedulesScreen: React.FC<SchedulesScreenProps> = ({
           className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4" />
-          <span>Back to Home</span>
+          <span>{t.backToHome}</span>
         </button>
 
         <div className="flex items-center gap-2">
           <span className="px-2.5 py-1 rounded-xl bg-blue-50 border border-blue-200 text-[11px] font-black text-blue-700">
-            {activeCount} Active Routine{activeCount !== 1 ? 's' : ''}
+            {language === 'hi'
+              ? `${activeCount} सक्रिय रूटीन`
+              : `${activeCount} Active Routine${activeCount !== 1 ? 's' : ''}`}
           </span>
           <button
             type="button"
             onClick={onRefresh}
             className="p-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors cursor-pointer"
-            title="Refresh Schedules"
+            title={language === 'hi' ? 'रीफ़्रेश करें' : 'Refresh Schedules'}
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin text-blue-600' : ''}`} />
           </button>
@@ -73,9 +77,11 @@ export const SchedulesScreen: React.FC<SchedulesScreenProps> = ({
               <Calendar className="w-6 h-6" />
             </div>
             <div>
-              <h2 className="text-base font-black text-slate-900 leading-tight">Pump Schedules</h2>
+              <h2 className="text-base font-black text-slate-900 leading-tight">
+                {t.schedulesTitle}
+              </h2>
               <p className="text-xs text-slate-500 font-medium mt-0.5">
-                Automated time-of-day routines &amp; custom day schedules
+                {t.schedulesSubtitle}
               </p>
             </div>
           </div>
@@ -86,7 +92,7 @@ export const SchedulesScreen: React.FC<SchedulesScreenProps> = ({
             className="px-3.5 py-2 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer flex-shrink-0"
           >
             <Plus className="w-4 h-4 stroke-[3]" />
-            <span>Add Slot</span>
+            <span>{t.addScheduleBtn}</span>
           </button>
         </div>
       </div>
@@ -94,16 +100,22 @@ export const SchedulesScreen: React.FC<SchedulesScreenProps> = ({
       {/* List of Schedules */}
       <div className="space-y-2.5">
         <h3 className="text-xs font-black uppercase tracking-wider text-slate-400 px-1">
-          Configured Schedules ({schedules.length})
+          {language === 'hi'
+            ? `कॉन्फ़िगर किए गए शेड्यूल (${schedules.length})`
+            : `Configured Schedules (${schedules.length})`}
         </h3>
 
         {schedules.length === 0 ? (
           <div className="mobile-card p-8 text-center text-xs text-slate-400 space-y-3">
             <Clock className="w-10 h-10 text-slate-300 mx-auto" />
             <div>
-              <p className="font-bold text-slate-700">No automated schedules created yet.</p>
+              <p className="font-bold text-slate-700">
+                {language === 'hi' ? 'कोई स्वचालित शेड्यूल नहीं बनाया गया है।' : 'No automated schedules created yet.'}
+              </p>
               <p className="text-[11px] text-slate-400 mt-0.5">
-                Set up a daily morning or evening routine to automatically run water pump.
+                {language === 'hi'
+                  ? 'स्वचालित मोटर चलाने हेतु सुबह या शाम का दैनिक शेड्यूल सेट करें।'
+                  : 'Set up a daily morning or evening routine to automatically run water pump.'}
               </p>
             </div>
             <button
@@ -111,7 +123,7 @@ export const SchedulesScreen: React.FC<SchedulesScreenProps> = ({
               onClick={onOpenAddSchedule}
               className="px-4 py-2 rounded-2xl bg-blue-600 text-white font-bold text-xs cursor-pointer"
             >
-              + Create First Schedule
+              {language === 'hi' ? '+ पहला शेड्यूल बनाएं' : '+ Create First Schedule'}
             </button>
           </div>
         ) : (
@@ -146,26 +158,38 @@ export const SchedulesScreen: React.FC<SchedulesScreenProps> = ({
                         )}
                       </div>
                       <div className="text-[11px] text-slate-500 font-medium mt-0.5">
-                        Starts at <span className="font-bold text-slate-800">{s.start_time}</span> &bull;{' '}
-                        Runs for <span className="font-bold text-slate-800">{Math.round(s.duration_seconds / 60)} mins</span>
+                        {language === 'hi' ? 'शुरू समय:' : 'Starts at'}{' '}
+                        <span className="font-bold text-slate-800">{s.start_time}</span> &bull;{' '}
+                        {language === 'hi' ? 'अवधि:' : 'Runs for'}{' '}
+                        <span className="font-bold text-slate-800">
+                          {Math.round(s.duration_seconds / 60)} {language === 'hi' ? 'मिनट' : 'mins'}
+                        </span>
                       </div>
                     </div>
                   </div>
 
                   {/* Day Badges */}
                   <div className="flex items-center gap-0.5 flex-wrap justify-end">
-                    {['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'].map((d) => {
-                      const isIncluded = s.days_of_week?.includes(d);
+                    {[
+                      { en: 'M', hi: 'सो', key: 'MON' },
+                      { en: 'T', hi: 'मं', key: 'TUE' },
+                      { en: 'W', hi: 'बु', key: 'WED' },
+                      { en: 'T', hi: 'गु', key: 'THU' },
+                      { en: 'F', hi: 'शु', key: 'FRI' },
+                      { en: 'S', hi: 'श', key: 'SAT' },
+                      { en: 'S', hi: 'र', key: 'SUN' },
+                    ].map((d) => {
+                      const isIncluded = s.days_of_week?.includes(d.key);
                       return (
                         <span
-                          key={d}
+                          key={d.key}
                           className={`text-[9px] font-bold px-1 py-0.5 rounded ${
                             isIncluded
                               ? 'bg-teal-100 text-teal-800'
                               : 'text-slate-300'
                           }`}
                         >
-                          {d[0]}
+                          {language === 'hi' ? d.hi : d.en}
                         </span>
                       );
                     })}
@@ -186,12 +210,16 @@ export const SchedulesScreen: React.FC<SchedulesScreenProps> = ({
                     {s.is_active ? (
                       <>
                         <Pause className="w-3 h-3 fill-current" />
-                        <span>Active (Tap to Pause)</span>
+                        <span>
+                          {language === 'hi' ? 'सक्रिय (रोकने हेतु टैप करें)' : 'Active (Tap to Pause)'}
+                        </span>
                       </>
                     ) : (
                       <>
                         <Play className="w-3 h-3 fill-current" />
-                        <span>Paused (Tap to Resume)</span>
+                        <span>
+                          {language === 'hi' ? 'रुका हुआ (चालू करने हेतु टैप करें)' : 'Paused (Tap to Resume)'}
+                        </span>
                       </>
                     )}
                   </button>
@@ -199,7 +227,7 @@ export const SchedulesScreen: React.FC<SchedulesScreenProps> = ({
                   <button
                     type="button"
                     onClick={() => onDeleteSchedule(s)}
-                    title="Delete Schedule"
+                    title={language === 'hi' ? 'शेड्यूल हटाएं' : 'Delete Schedule'}
                     className="p-1.5 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
                   >
                     <Trash2 className="w-4 h-4" />

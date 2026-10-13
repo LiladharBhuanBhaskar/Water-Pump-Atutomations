@@ -4,6 +4,7 @@ import {
   Zap,
   RefreshCw,
 } from 'lucide-react';
+import { useLanguage } from '../../context/LanguageContext';
 
 interface ElectricalLoadScreenProps {
   onBack: () => void;
@@ -24,12 +25,13 @@ export const ElectricalLoadScreen: React.FC<ElectricalLoadScreenProps> = ({
   onRefresh,
   isSyncing,
 }) => {
+  const { t, language } = useLanguage();
   const isOverload = currentAmps > 15;
   const isVoltageNormal = voltage >= 180 && voltage <= 260;
   const loadPct = Math.min(100, Math.round((currentAmps / 15) * 100));
 
   return (
-    <div className="space-y-4 animate-fade-in font-['Poppins',sans-serif]">
+    <div className="space-y-4 animate-fade-in font-sans pb-dock-clearance">
       {/* Top Header Bar */}
       <div className="flex items-center justify-between pb-2 border-b border-slate-100">
         <button
@@ -38,18 +40,24 @@ export const ElectricalLoadScreen: React.FC<ElectricalLoadScreenProps> = ({
           className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4" />
-          <span>Back to Home</span>
+          <span>{t.backToHome}</span>
         </button>
 
         <div className="flex items-center gap-2">
           <span
             className={`px-2.5 py-1 rounded-xl text-[11px] font-black border ${
-              isOverload
+              !isMotorRunning
+                ? 'bg-slate-100 border-slate-200 text-slate-600'
+                : isOverload
                 ? 'bg-rose-50 border-rose-200 text-rose-700'
                 : 'bg-blue-50 border-blue-200 text-blue-700'
             }`}
           >
-            {isOverload ? 'OVERLOAD TRIP' : isMotorRunning ? 'ACTIVE LOAD' : 'GRID BALANCED'}
+            {!isMotorRunning
+              ? (language === 'hi' ? 'मोटर बंद है' : 'STANDBY')
+              : isOverload
+              ? t.loadWarning
+              : t.operatingNormal}
           </span>
           <button
             type="button"
@@ -70,9 +78,9 @@ export const ElectricalLoadScreen: React.FC<ElectricalLoadScreenProps> = ({
               <Zap className="w-6 h-6" />
             </div>
             <div>
-              <h2 className="text-base font-black text-slate-900 leading-tight">Electrical Load &amp; Power</h2>
+              <h2 className="text-base font-black text-slate-900 leading-tight">{t.electricalTitle}</h2>
               <p className="text-xs text-slate-500 font-medium mt-0.5">
-                Current draw, RMS line voltage &amp; power factor telemetry
+                {t.electricalSubtitle}
               </p>
             </div>
           </div>
@@ -85,7 +93,7 @@ export const ElectricalLoadScreen: React.FC<ElectricalLoadScreenProps> = ({
         <div className="grid grid-cols-2 gap-2.5">
           {/* Current */}
           <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-1">
-            <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">Line Current</div>
+            <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">{t.motorCurrent}</div>
             <div className="text-2xl font-black text-slate-900 font-mono">
               {currentAmps.toFixed(1)} <span className="text-xs text-slate-400 font-normal">A</span>
             </div>
@@ -94,7 +102,7 @@ export const ElectricalLoadScreen: React.FC<ElectricalLoadScreenProps> = ({
 
           {/* Voltage */}
           <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-1">
-            <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">Grid Voltage</div>
+            <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">{t.lineVoltage}</div>
             <div className="text-2xl font-black text-slate-900 font-mono">
               {voltage.toFixed(0)} <span className="text-xs text-slate-400 font-normal">V</span>
             </div>
@@ -105,11 +113,11 @@ export const ElectricalLoadScreen: React.FC<ElectricalLoadScreenProps> = ({
 
           {/* Power kW */}
           <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-1">
-            <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">Active Power</div>
+            <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">{t.activePowerKw}</div>
             <div className="text-2xl font-black text-slate-900 font-mono">
               {powerKw.toFixed(2)} <span className="text-xs text-slate-400 font-normal">kW</span>
             </div>
-            <div className="text-[10px] font-bold text-blue-700">Power Factor: 0.85</div>
+            <div className="text-[10px] font-bold text-blue-700">{t.powerFactor}: 0.85</div>
           </div>
 
           {/* Thermal Load */}

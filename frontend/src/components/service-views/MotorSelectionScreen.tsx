@@ -9,6 +9,7 @@ import {
   Square,
 } from 'lucide-react';
 import { Motor } from '../../types';
+import { useLanguage } from '../../context/LanguageContext';
 
 interface MotorSelectionScreenProps {
   onBack: () => void;
@@ -39,10 +40,11 @@ export const MotorSelectionScreen: React.FC<MotorSelectionScreenProps> = ({
   onRefresh,
   isSyncing,
 }) => {
+  const { t, language } = useLanguage();
   const isRunning = activeMotor?.status === 'ON' || activeMotor?.status === 'STARTING';
 
   return (
-    <div className="space-y-4 animate-fade-in font-['Poppins',sans-serif]">
+    <div className="space-y-4 animate-fade-in font-sans pb-dock-clearance">
       {/* Top Header Bar */}
       <div className="flex items-center justify-between pb-2 border-b border-slate-100">
         <button
@@ -51,12 +53,14 @@ export const MotorSelectionScreen: React.FC<MotorSelectionScreenProps> = ({
           className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4" />
-          <span>Back to Home</span>
+          <span>{t.backToHome}</span>
         </button>
 
         <div className="flex items-center gap-2">
           <span className="px-2.5 py-1 rounded-xl bg-blue-50 border border-blue-200 text-[11px] font-black text-blue-700">
-            {motors.length} Motor{motors.length !== 1 ? 's' : ''} Configured
+            {language === 'hi'
+              ? `${motors.length} मोटर कॉन्फ़िगर हैं`
+              : `${motors.length} Motor${motors.length !== 1 ? 's' : ''} Configured`}
           </span>
           <button
             type="button"
@@ -76,9 +80,13 @@ export const MotorSelectionScreen: React.FC<MotorSelectionScreenProps> = ({
             <Sliders className="w-6 h-6" />
           </div>
           <div>
-            <h2 className="text-base font-black text-slate-900 leading-tight">Select Active Motor</h2>
+            <h2 className="text-base font-black text-slate-900 leading-tight">
+              {t.selectActiveMotor}
+            </h2>
             <p className="text-xs text-slate-500 font-medium mt-0.5">
-              Choose the designated pump unit for live telemetry &amp; automated control
+              {language === 'hi'
+                ? 'लाइव टेलीमेट्री एवं ऑटोमेशन हेतु सक्रिय मोटर यूनिट चुनें'
+                : 'Choose the designated pump unit for live telemetry & automated control'}
             </p>
           </div>
         </div>
@@ -127,19 +135,19 @@ export const MotorSelectionScreen: React.FC<MotorSelectionScreenProps> = ({
           {/* Quick Metrics per Motor */}
           <div className="grid grid-cols-3 gap-2 pt-1 border-t border-slate-100 text-center">
             <div className="p-2 rounded-xl bg-slate-50 border border-slate-100">
-              <div className="text-[10px] text-slate-400 font-bold uppercase">Current</div>
+              <div className="text-[10px] text-slate-400 font-bold uppercase">{t.current}</div>
               <div className="text-xs font-black text-slate-900 font-mono mt-0.5">
                 {currentAmps.toFixed(1)} A
               </div>
             </div>
             <div className="p-2 rounded-xl bg-slate-50 border border-slate-100">
-              <div className="text-[10px] text-slate-400 font-bold uppercase">Voltage</div>
+              <div className="text-[10px] text-slate-400 font-bold uppercase">{t.voltage}</div>
               <div className="text-xs font-black text-slate-900 font-mono mt-0.5">
                 {voltage.toFixed(0)} V
               </div>
             </div>
             <div className="p-2 rounded-xl bg-slate-50 border border-slate-100">
-              <div className="text-[10px] text-slate-400 font-bold uppercase">Power</div>
+              <div className="text-[10px] text-slate-400 font-bold uppercase">{t.power}</div>
               <div className="text-xs font-black text-slate-900 font-mono mt-0.5">
                 {powerKw.toFixed(2)} kW
               </div>
@@ -157,7 +165,9 @@ export const MotorSelectionScreen: React.FC<MotorSelectionScreenProps> = ({
                   className="flex-1 py-3 px-4 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-black flex items-center justify-center gap-2 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
                 >
                   <Clock className="w-4 h-4" />
-                  <span>START WITH TIMER</span>
+                  <span>
+                    {language === 'hi' ? 'टाइमर के साथ चालू करें' : 'START WITH TIMER'}
+                  </span>
                 </button>
 
                 <button
@@ -167,7 +177,9 @@ export const MotorSelectionScreen: React.FC<MotorSelectionScreenProps> = ({
                   className="py-3 px-4 rounded-2xl bg-blue-50 hover:bg-blue-100 text-blue-800 text-xs font-black flex items-center justify-center gap-1.5 border border-blue-200 transition-all active:scale-95 cursor-pointer disabled:opacity-50"
                 >
                   <Play className="w-4 h-4 fill-current" />
-                  <span>START</span>
+                  <span>
+                    {language === 'hi' ? 'चालू करें' : 'START'}
+                  </span>
                 </button>
               </>
             ) : (
@@ -178,7 +190,9 @@ export const MotorSelectionScreen: React.FC<MotorSelectionScreenProps> = ({
                 className="w-full py-3 px-4 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-black flex items-center justify-center gap-2 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
               >
                 <Square className="w-4 h-4 fill-current" />
-                <span>STOP MOTOR NOW</span>
+                <span>
+                  {language === 'hi' ? 'मोटर अभी बंद करें' : 'STOP MOTOR NOW'}
+                </span>
               </button>
             )}
           </div>
@@ -188,7 +202,9 @@ export const MotorSelectionScreen: React.FC<MotorSelectionScreenProps> = ({
       {/* Available Motor Units List */}
       <div className="space-y-2 pt-2">
         <h3 className="text-xs font-black uppercase tracking-wider text-slate-400 px-1">
-          Available Pump Units ({motors.length})
+          {language === 'hi'
+            ? `उपलब्ध मोटर यूनिट्स (${motors.length})`
+            : `Available Pump Units (${motors.length})`}
         </h3>
 
         <div className="space-y-2.5">
@@ -225,7 +241,7 @@ export const MotorSelectionScreen: React.FC<MotorSelectionScreenProps> = ({
                         </span>
                       </div>
                       <div className="text-xs text-slate-400 font-medium mt-0.5">
-                        {m.motor_type?.replace('_', ' ') || 'Centrifugal Water Pump'} &bull; Rated {m.rated_power ?? 1.5} kW
+                        {m.motor_type?.replace('_', ' ') || 'Centrifugal Water Pump'} &bull; {language === 'hi' ? 'निर्धारित' : 'Rated'} {m.rated_power ?? 1.5} kW
                       </div>
                     </div>
                   </div>
@@ -245,7 +261,9 @@ export const MotorSelectionScreen: React.FC<MotorSelectionScreenProps> = ({
 
                 <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs">
                   <span className={`font-bold ${isSelected ? 'text-blue-700' : 'text-slate-400'}`}>
-                    {isSelected ? '✓ Currently Active Unit' : 'Tap to Select this Motor'}
+                    {isSelected
+                      ? (language === 'hi' ? '✓ वर्तमान में सक्रिय मोटर' : '✓ Currently Active Unit')
+                      : (language === 'hi' ? 'चुनने के लिए टैप करें' : 'Tap to Select this Motor')}
                   </span>
                   <span className="text-[11px] text-slate-400 font-mono">
                     Code: {m.motor_code}

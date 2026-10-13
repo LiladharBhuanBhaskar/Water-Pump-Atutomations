@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   ShieldAlert,
 } from 'lucide-react';
+import { useLanguage } from '../../context/LanguageContext';
 
 interface SumpLevelScreenProps {
   onBack: () => void;
@@ -25,6 +26,7 @@ export const SumpLevelScreen: React.FC<SumpLevelScreenProps> = ({
   onRefresh,
   isSyncing,
 }) => {
+  const { t } = useLanguage();
   const [threshold, setThreshold] = useState<number>(initialThreshold);
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [savedSuccess, setSavedSuccess] = useState<boolean>(false);
@@ -44,7 +46,7 @@ export const SumpLevelScreen: React.FC<SumpLevelScreenProps> = ({
   };
 
   return (
-    <div className="space-y-4 animate-fade-in font-['Poppins',sans-serif]">
+    <div className="space-y-4 animate-fade-in font-sans pb-dock-clearance">
       {/* Top Header Bar */}
       <div className="flex items-center justify-between pb-2 border-b border-slate-100">
         <button
@@ -53,7 +55,7 @@ export const SumpLevelScreen: React.FC<SumpLevelScreenProps> = ({
           className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4" />
-          <span>Back to Home</span>
+          <span>{t.backToHome}</span>
         </button>
 
         <div className="flex items-center gap-2">
@@ -64,7 +66,7 @@ export const SumpLevelScreen: React.FC<SumpLevelScreenProps> = ({
                 : 'bg-blue-50 border-blue-200 text-blue-700'
             }`}
           >
-            {isDryRun ? 'DRY-RUN TRIP' : 'SOURCE SAFE'}
+            {isDryRun ? t.dryRunWarning : t.dryRunSafe}
           </span>
           <button
             type="button"
@@ -85,9 +87,9 @@ export const SumpLevelScreen: React.FC<SumpLevelScreenProps> = ({
               <Droplet className="w-6 h-6" />
             </div>
             <div>
-              <h2 className="text-base font-black text-slate-900 leading-tight">Sump &amp; Source Level</h2>
+              <h2 className="text-base font-black text-slate-900 leading-tight">{t.sumpTitle}</h2>
               <p className="text-xs text-slate-500 font-medium mt-0.5">
-                Underground reservoir &amp; borewell dry-run protection
+                {t.sumpSubtitle}
               </p>
             </div>
           </div>
@@ -187,8 +189,8 @@ export const SumpLevelScreen: React.FC<SumpLevelScreenProps> = ({
             />
           </div>
           <div className="flex justify-between text-[10px] text-slate-400 font-medium">
-            <span>5% (Minimum Suction)</span>
-            <span>40% (Conservative Safety)</span>
+            <span>{t.minSafe}</span>
+            <span>{t.highReserve}</span>
           </div>
         </div>
 
@@ -206,7 +208,7 @@ export const SumpLevelScreen: React.FC<SumpLevelScreenProps> = ({
           ) : (
             <Save className="w-3.5 h-3.5" />
           )}
-          <span>{isSaving ? 'Saving...' : savedSuccess ? 'Saved Successfully!' : 'Save Sump Threshold'}</span>
+          <span>{isSaving ? t.saving : savedSuccess ? t.savedSuccessfully : t.saveSumpThreshold}</span>
         </button>
       </div>
     </div>
