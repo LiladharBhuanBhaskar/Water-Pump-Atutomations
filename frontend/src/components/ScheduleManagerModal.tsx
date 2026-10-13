@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { Station, Motor, ScheduleResponse, ScheduleCreateRequest } from '../types';
 import { api } from '../services/api';
+import { useLanguage } from '../context/LanguageContext';
 
 interface ScheduleManagerModalProps {
   isOpen: boolean;
@@ -22,22 +23,13 @@ interface ScheduleManagerModalProps {
   motors: Motor[];
 }
 
-const ALL_DAYS = [
-  { key: 'MON', label: 'Mon' },
-  { key: 'TUE', label: 'Tue' },
-  { key: 'WED', label: 'Wed' },
-  { key: 'THU', label: 'Thu' },
-  { key: 'FRI', label: 'Fri' },
-  { key: 'SAT', label: 'Sat' },
-  { key: 'SUN', label: 'Sun' },
-];
-
 export const ScheduleManagerModal: React.FC<ScheduleManagerModalProps> = ({
   isOpen,
   onClose,
   station,
   motors,
 }) => {
+  const { t, language } = useLanguage();
   const [schedules, setSchedules] = useState<ScheduleResponse[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -173,11 +165,21 @@ export const ScheduleManagerModal: React.FC<ScheduleManagerModalProps> = ({
     }
   };
 
+  const allDays = [
+    { key: 'MON', label: language === 'hi' ? 'सोम' : 'Mon' },
+    { key: 'TUE', label: language === 'hi' ? 'मंगल' : 'Tue' },
+    { key: 'WED', label: language === 'hi' ? 'बुध' : 'Wed' },
+    { key: 'THU', label: language === 'hi' ? 'गुरु' : 'Thu' },
+    { key: 'FRI', label: language === 'hi' ? 'शुक्र' : 'Fri' },
+    { key: 'SAT', label: language === 'hi' ? 'शनि' : 'Sat' },
+    { key: 'SUN', label: language === 'hi' ? 'रवि' : 'Sun' },
+  ];
+
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="relative w-full max-w-lg bg-white sm:rounded-[28px] rounded-t-[28px] border border-slate-200 overflow-hidden flex flex-col max-h-[92vh] font-['Poppins',sans-serif]">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/60 backdrop-blur-sm animate-fade-in">
+      <div className="relative w-full max-w-lg bg-white sm:rounded-2xl rounded-t-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90dvh] font-sans">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-slate-50/50">
           <div className="flex items-center gap-3">
@@ -186,10 +188,10 @@ export const ScheduleManagerModal: React.FC<ScheduleManagerModalProps> = ({
             </div>
             <div>
               <h2 className="text-base font-black text-slate-900 tracking-tight leading-tight">
-                Daily Pump Schedules
+                {language === 'hi' ? 'दैनिक पंप शेड्यूल' : 'Daily Pump Schedules'}
               </h2>
               <p className="text-xs text-slate-400 font-medium">
-                {station.name} &bull; Automated Motor Timers
+                {station.name} &bull; {language === 'hi' ? 'स्वचालित मोटर टाइमर' : 'Automated Motor Timers'}
               </p>
             </div>
           </div>
@@ -221,16 +223,18 @@ export const ScheduleManagerModal: React.FC<ScheduleManagerModalProps> = ({
           {/* Action Header */}
           <div className="flex items-center justify-between">
             <h3 className="text-xs font-black uppercase tracking-wider text-slate-400">
-              Configured Timers ({schedules.length})
+              {language === 'hi'
+                ? `कॉन्फ़िगर किए गए टाइमर (${schedules.length})`
+                : `Configured Timers (${schedules.length})`}
             </h3>
             {!isCreating && (
               <button
                 type="button"
                 onClick={() => setIsCreating(true)}
-                className="px-3 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold flex items-center gap-1 shadow-md shadow-teal-600/20 transition-all"
+                className="px-3 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold flex items-center gap-1 shadow-md shadow-teal-600/20 transition-all cursor-pointer"
               >
                 <Plus className="w-3.5 h-3.5 stroke-[3]" />
-                <span>Add Timer</span>
+                <span>{language === 'hi' ? 'टाइमर जोड़ें' : 'Add Timer'}</span>
               </button>
             )}
           </div>
@@ -243,25 +247,26 @@ export const ScheduleManagerModal: React.FC<ScheduleManagerModalProps> = ({
             >
               <div className="flex items-center justify-between border-b border-teal-200/60 pb-2">
                 <span className="text-xs font-black uppercase tracking-wider text-teal-800 flex items-center gap-1.5">
-                  <Plus className="w-3.5 h-3.5 stroke-[3]" /> Create New Timer
+                  <Plus className="w-3.5 h-3.5 stroke-[3]" />{' '}
+                  {language === 'hi' ? 'नया टाइमर बनाएं' : 'Create New Timer'}
                 </span>
                 <button
                   type="button"
                   onClick={() => setIsCreating(false)}
-                  className="text-xs font-bold text-slate-400 hover:text-slate-600"
+                  className="text-xs font-bold text-slate-400 hover:text-slate-600 cursor-pointer"
                 >
-                  Cancel
+                  {t.cancel}
                 </button>
               </div>
 
               <div>
                 <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                  Schedule Title
+                  {language === 'hi' ? 'शेड्यूल का नाम' : 'Schedule Title'}
                 </label>
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Morning Tank Fill"
+                  placeholder={language === 'hi' ? 'उदा. सुबह टंकी भरना' : 'e.g. Morning Tank Fill'}
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 text-xs font-semibold text-slate-900 placeholder-slate-400 focus:outline-none focus:border-teal-500 shadow-xs"
@@ -273,10 +278,10 @@ export const ScheduleManagerModal: React.FC<ScheduleManagerModalProps> = ({
                 <label className="block text-[11px] font-bold text-slate-700 mb-1.5 flex items-center justify-between">
                   <span className="flex items-center gap-1 text-slate-900">
                     <Zap className="w-3.5 h-3.5 text-teal-600" />
-                    <span>Target Motor to Start</span>
+                    <span>{language === 'hi' ? 'लक्ष्य मोटर' : 'Target Motor to Start'}</span>
                   </span>
                   <span className="text-[10px] text-slate-400 font-semibold">
-                    {motors.length} {motors.length === 1 ? 'Motor Unit' : 'Motor Units'}
+                    {motors.length} {language === 'hi' ? 'मोटर यूनिट्स' : (motors.length === 1 ? 'Motor Unit' : 'Motor Units')}
                   </span>
                 </label>
                 {motors.length > 0 ? (
@@ -288,7 +293,7 @@ export const ScheduleManagerModal: React.FC<ScheduleManagerModalProps> = ({
                           key={m.id}
                           type="button"
                           onClick={() => setSelectedMotorId(m.id)}
-                          className={`p-2.5 rounded-xl border text-left transition-all flex items-center justify-between ${
+                          className={`p-2.5 rounded-xl border text-left transition-all flex items-center justify-between cursor-pointer ${
                             isSelected
                               ? 'bg-teal-600 text-white border-teal-600 shadow-sm ring-2 ring-teal-500/30'
                               : 'bg-white text-slate-700 border-slate-200 hover:border-teal-300 hover:bg-teal-50/40'
@@ -322,7 +327,7 @@ export const ScheduleManagerModal: React.FC<ScheduleManagerModalProps> = ({
                   </div>
                 ) : (
                   <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs">
-                    No motors found for this station.
+                    {language === 'hi' ? 'इस स्टेशन के लिए कोई मोटर नहीं मिली।' : 'No motors found for this station.'}
                   </div>
                 )}
               </div>
@@ -330,17 +335,17 @@ export const ScheduleManagerModal: React.FC<ScheduleManagerModalProps> = ({
               {/* Day Selection Pills */}
               <div>
                 <label className="block text-[11px] font-bold text-slate-700 mb-1.5">
-                  Repeat Days
+                  {language === 'hi' ? 'पुनरावृत्ति दिन' : 'Repeat Days'}
                 </label>
                 <div className="grid grid-cols-7 gap-1">
-                  {ALL_DAYS.map((d) => {
+                  {allDays.map((d) => {
                     const isSelected = selectedDays.includes(d.key);
                     return (
                       <button
                         type="button"
                         key={d.key}
                         onClick={() => toggleDay(d.key)}
-                        className={`py-1.5 rounded-lg text-[11px] font-bold transition-all text-center ${
+                        className={`py-1.5 rounded-lg text-[11px] font-bold transition-all text-center cursor-pointer ${
                           isSelected
                             ? 'bg-teal-600 text-white shadow-xs'
                             : 'bg-white text-slate-400 border border-slate-200 hover:text-slate-700'
@@ -356,7 +361,7 @@ export const ScheduleManagerModal: React.FC<ScheduleManagerModalProps> = ({
               <div className="grid grid-cols-2 gap-2.5">
                 <div>
                   <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                    Start Time
+                    {language === 'hi' ? 'शुरू समय' : 'Start Time'}
                   </label>
                   <input
                     type="time"
@@ -369,7 +374,7 @@ export const ScheduleManagerModal: React.FC<ScheduleManagerModalProps> = ({
 
                 <div>
                   <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                    Duration (Minutes)
+                    {language === 'hi' ? 'अवधि (मिनट)' : 'Duration (Minutes)'}
                   </label>
                   <input
                     type="number"
@@ -387,17 +392,19 @@ export const ScheduleManagerModal: React.FC<ScheduleManagerModalProps> = ({
                 <button
                   type="button"
                   onClick={() => setIsCreating(false)}
-                  className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-colors"
+                  className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-colors cursor-pointer"
                 >
-                  Cancel
+                  {t.cancel}
                 </button>
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold flex items-center gap-1 shadow-md shadow-teal-600/25 transition-all"
+                  className="px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold flex items-center gap-1 shadow-md shadow-teal-600/25 transition-all cursor-pointer"
                 >
                   <Check className="w-3.5 h-3.5 stroke-[3]" />
-                  <span>{submitting ? 'Saving...' : 'Save Timer'}</span>
+                  <span>
+                    {submitting ? t.saving : (language === 'hi' ? 'टाइमर सहेजें' : 'Save Timer')}
+                  </span>
                 </button>
               </div>
             </form>
@@ -407,21 +414,27 @@ export const ScheduleManagerModal: React.FC<ScheduleManagerModalProps> = ({
           {loading ? (
             <div className="py-10 text-center text-slate-400 space-y-2">
               <RotateCcw className="w-6 h-6 animate-spin mx-auto text-teal-600" />
-              <p className="text-xs font-semibold">Loading timer schedules...</p>
+              <p className="text-xs font-semibold">
+                {language === 'hi' ? 'टाइमर शेड्यूल लोड हो रहे हैं...' : 'Loading timer schedules...'}
+              </p>
             </div>
           ) : schedules.length === 0 ? (
             <div className="py-10 text-center border-2 border-dashed border-slate-200 rounded-2xl p-6 space-y-2">
               <Calendar className="w-8 h-8 text-slate-300 mx-auto" />
-              <p className="text-sm font-bold text-slate-800">No automated timers configured</p>
+              <p className="text-sm font-bold text-slate-800">
+                {language === 'hi' ? 'कोई स्वचालित टाइमर कॉन्फ़िगर नहीं है' : 'No automated timers configured'}
+              </p>
               <p className="text-xs text-slate-400 max-w-xs mx-auto">
-                Set daily schedules to automatically start and stop your water pump with built-in safety cutoff.
+                {language === 'hi'
+                  ? 'सुरक्षा कट-ऑफ के साथ मोटर स्वचालित रूप से चालू/बंद करने के लिए दैनिक शेड्यूल सेट करें।'
+                  : 'Set daily schedules to automatically start and stop your water pump with built-in safety cutoff.'}
               </p>
               <button
                 type="button"
                 onClick={() => setIsCreating(true)}
-                className="mt-2 px-3.5 py-1.5 rounded-xl bg-teal-50 text-teal-700 font-bold text-xs hover:bg-teal-100 transition-colors"
+                className="mt-2 px-3.5 py-1.5 rounded-xl bg-teal-50 text-teal-700 font-bold text-xs hover:bg-teal-100 transition-colors cursor-pointer"
               >
-                + Create First Timer
+                {language === 'hi' ? '+ पहला टाइमर बनाएं' : '+ Create First Timer'}
               </button>
             </div>
           ) : (
@@ -447,7 +460,9 @@ export const ScheduleManagerModal: React.FC<ScheduleManagerModalProps> = ({
                               : 'bg-slate-100 text-slate-500'
                           }`}
                         >
-                          {s.is_active ? 'ACTIVE' : 'DISABLED'}
+                          {s.is_active
+                            ? (language === 'hi' ? 'सक्रिय' : 'ACTIVE')
+                            : (language === 'hi' ? 'निष्क्रिय' : 'DISABLED')}
                         </span>
                         {targetMotor && (
                           <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-teal-50 text-teal-800 border border-teal-200/70 flex items-center gap-1 font-mono">
@@ -463,7 +478,9 @@ export const ScheduleManagerModal: React.FC<ScheduleManagerModalProps> = ({
                           {s.start_time}
                         </span>
                         <span>&bull;</span>
-                        <span>{Math.round(s.duration_seconds / 60)} mins</span>
+                        <span>
+                          {Math.round(s.duration_seconds / 60)} {language === 'hi' ? 'मिनट' : 'mins'}
+                        </span>
                         {targetMotor && (
                           <>
                             <span>&bull;</span>
@@ -482,20 +499,24 @@ export const ScheduleManagerModal: React.FC<ScheduleManagerModalProps> = ({
                         type="button"
                         onClick={() => handleToggleActive(s)}
                         title={s.is_active ? 'Deactivate Timer' : 'Activate Timer'}
-                        className={`px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 transition-colors ${
+                        className={`px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 transition-colors cursor-pointer ${
                           s.is_active
                             ? 'bg-slate-100 hover:bg-slate-200 text-slate-700'
                             : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700'
                         }`}
                       >
                         <Power className="w-3 h-3 stroke-[2.5]" />
-                        <span>{s.is_active ? 'Pause' : 'Enable'}</span>
+                        <span>
+                          {s.is_active
+                            ? (language === 'hi' ? 'रोकें' : 'Pause')
+                            : (language === 'hi' ? 'चालू करें' : 'Enable')}
+                        </span>
                       </button>
                       <button
                         type="button"
                         onClick={() => setScheduleToDelete(s)}
-                        className="p-1.5 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
-                        title="Delete Timer"
+                        className="p-1.5 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                        title={language === 'hi' ? 'टाइमर हटाएं' : 'Delete Timer'}
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -508,13 +529,13 @@ export const ScheduleManagerModal: React.FC<ScheduleManagerModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-3 border-t border-slate-100 bg-slate-50/50 flex justify-end">
+        <div className="px-5 py-3 border-t border-slate-100 bg-slate-50/50 flex justify-end pb-[max(0.75rem,env(safe-area-inset-bottom,0px))]">
           <button
             type="button"
             onClick={onClose}
-            className="px-5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold shadow-xs transition-colors"
+            className="px-5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold shadow-xs transition-colors cursor-pointer"
           >
-            Done
+            {language === 'hi' ? 'पूर्ण' : 'Done'}
           </button>
         </div>
       </div>
@@ -529,10 +550,18 @@ export const ScheduleManagerModal: React.FC<ScheduleManagerModalProps> = ({
               </div>
               <div className="space-y-1 min-w-0">
                 <h3 className="text-base font-black text-slate-900 tracking-tight leading-tight">
-                  Delete Timer Schedule?
+                  {language === 'hi' ? 'टाइमर शेड्यूल हटाएं?' : 'Delete Timer Schedule?'}
                 </h3>
                 <p className="text-xs text-slate-500 leading-relaxed">
-                  Are you sure you want to remove <span className="font-bold text-slate-800">"{scheduleToDelete.name}"</span>? Automated pump cycles for this slot will be permanently stopped.
+                  {language === 'hi' ? (
+                    <>
+                      क्या आप <span className="font-bold text-slate-800">"{scheduleToDelete.name}"</span> को हटाना चाहते हैं? इस स्लॉट का स्वचालित मोटर चक्र स्थायी रूप से बंद हो जाएगा।
+                    </>
+                  ) : (
+                    <>
+                      Are you sure you want to remove <span className="font-bold text-slate-800">"{scheduleToDelete.name}"</span>? Automated pump cycles for this slot will be permanently stopped.
+                    </>
+                  )}
                 </p>
               </div>
             </div>
@@ -542,22 +571,26 @@ export const ScheduleManagerModal: React.FC<ScheduleManagerModalProps> = ({
                 type="button"
                 onClick={() => setScheduleToDelete(null)}
                 disabled={isDeleting}
-                className="py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-colors"
+                className="py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-colors cursor-pointer"
               >
-                Cancel
+                {t.cancel}
               </button>
               <button
                 type="button"
                 onClick={confirmDeleteSchedule}
                 disabled={isDeleting}
-                className="py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-md shadow-rose-600/25 transition-all flex items-center justify-center gap-1.5"
+                className="py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-md shadow-rose-600/25 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 {isDeleting ? (
                   <RotateCcw className="w-3.5 h-3.5 animate-spin" />
                 ) : (
                   <Trash2 className="w-3.5 h-3.5" />
                 )}
-                <span>{isDeleting ? 'Deleting...' : 'Delete'}</span>
+                <span>
+                  {isDeleting
+                    ? (language === 'hi' ? 'हटाया जा रहा है...' : 'Deleting...')
+                    : t.delete}
+                </span>
               </button>
             </div>
           </div>
