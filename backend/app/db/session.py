@@ -20,8 +20,9 @@ except ImportError:
 
 # Engine configuration arguments based on dialect
 is_sqlite = settings.DATABASE_URL.startswith("sqlite")
-async_engine_kwargs = {"echo": settings.DEBUG}
-sync_engine_kwargs = {"echo": settings.DEBUG}
+# echo=False: SQL queries are NOT printed to console. Set to True only when debugging specific queries.
+async_engine_kwargs = {"echo": False}
+sync_engine_kwargs = {"echo": False}
 
 if is_sqlite:
     async_engine_kwargs["connect_args"] = {"check_same_thread": False, "timeout": 30}
