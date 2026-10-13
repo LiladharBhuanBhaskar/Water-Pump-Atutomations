@@ -69,7 +69,7 @@ async def process_heartbeat_payload(device_uid: str, payload: Any) -> Optional[C
         session.add(controller)
         await session.commit()
         await session.refresh(controller)
-        logger.info(f"Updated MQTT heartbeat for device '{device_uid}' (Status: {controller.status.value})")
+        logger.debug(f"Updated MQTT heartbeat for device '{device_uid}' (Status: {controller.status.value})")
         return controller
 
 

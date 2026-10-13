@@ -154,7 +154,7 @@ async def process_status_payload(device_uid: str, payload: Any) -> bool:
                         })
 
         await session.commit()
-        logger.info(f"Processed state sync for controller '{device_uid}'")
+        logger.debug(f"Processed state sync for controller '{device_uid}'")
 
         # Broadcast motor state transitions to WebSocket clients
         for mt in motor_transitions:
