@@ -6,7 +6,8 @@ Processes command execution acknowledgments from controllers and updates MotorCo
 import uuid
 import logging
 from typing import Dict, Any, Optional
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+from sqlalchemy import desc
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 
@@ -93,7 +94,7 @@ async def process_ack_payload(device_uid: str, payload: Any) -> Optional[MotorCo
 
         # Check for stale ACK on already terminal command
         if command.status in terminal_states:
-            logger.info(f"Ignoring ACK for already terminal command '{command_id}' (status={command.status.value})")
+            logger.debug(f"Ignoring ACK for already terminal command '{command_id}' (status={command.status.value})")
             return command
 
         old_motor_status = motor.status
@@ -153,16 +154,56 @@ async def process_ack_payload(device_uid: str, payload: Any) -> Optional[MotorCo
                 motor.status = motor_transition_res.next_state
                 session.add(motor)
                 if motor_transition_res.event_type is not None:
-                    created_event = MotorEvent(
-                        id=uuid.uuid4(),
-                        motor_id=motor.id,
-                        event_type=motor_transition_res.event_type,
-                        source=MotorEventSource.CONTROLLER,
-                        occurred_at=payload_now,
-                        event_payload=payload,
-                        description=motor_transition_res.reason
+                    cmd_pl = command.command_payload if isinstance(command.command_payload, dict) else {}
+                    is_auto = False
+                    reason_check = str(cmd_pl.get("reason", "")).upper()
+                    if "SCHEDULE" in reason_check or "TIMER" in reason_check or "AUTO" in reason_check or "schedule_id" in cmd_pl or "schedule_name" in cmd_pl:
+                        is_auto = True
+
+                    evt_src = MotorEventSource.AUTOMATION if is_auto else MotorEventSource.CONTROLLER
+                    evt_desc = motor_transition_res.reason
+                    if cmd_pl.get("schedule_name"):
+                        s_name = cmd_pl.get("schedule_name")
+                        evt_desc = f"Schedule Completed: {s_name}" if command.command_type == CommandType.STOP else f"Schedule: {s_name}"
+                    elif cmd_pl.get("reason") == "MANUAL_STOP":
+                        evt_desc = "Manual stop command by operator"
+                    elif cmd_pl.get("reason") == "MANUAL_START":
+                        evt_desc = "Manual start command by operator"
+
+                    merged_payload = {**cmd_pl, **(payload if isinstance(payload, dict) else {})}
+
+                    # Check for recent dispatch event to prevent duplicates
+                    existing_evt_stmt = (
+                        select(MotorEvent)
+                        .where(MotorEvent.motor_id == motor.id)
+                        .where(MotorEvent.event_type == motor_transition_res.event_type)
+                        .where(MotorEvent.occurred_at >= (command.requested_at or payload_now) - timedelta(seconds=15))
+                        .order_by(desc(MotorEvent.occurred_at))
+                        .limit(1)
                     )
-                    session.add(created_event)
+                    existing_evt_res = await session.execute(existing_evt_stmt)
+                    existing_evt = existing_evt_res.scalar_one_or_none()
+
+                    if existing_evt is not None:
+                        if isinstance(existing_evt.event_payload, dict):
+                            existing_evt.event_payload = {**existing_evt.event_payload, **merged_payload}
+                        if is_auto:
+                            existing_evt.source = MotorEventSource.AUTOMATION
+                        if cmd_pl.get("schedule_name"):
+                            existing_evt.description = evt_desc
+                        session.add(existing_evt)
+                        created_event = existing_evt
+                    else:
+                        created_event = MotorEvent(
+                            id=uuid.uuid4(),
+                            motor_id=motor.id,
+                            event_type=motor_transition_res.event_type,
+                            source=evt_src,
+                            occurred_at=payload_now,
+                            event_payload=merged_payload,
+                            description=evt_desc
+                        )
+                        session.add(created_event)
 
         elif status_str in ("FAILED", "REJECTED", "ERROR"):
             command.status = CommandStatus.FAILED
@@ -212,7 +253,7 @@ async def process_ack_payload(device_uid: str, payload: Any) -> Optional[MotorCo
         session.add(command)
         await session.commit()
         await session.refresh(command)
-        logger.info(f"Updated MotorCommand '{command_id}' to status '{command.status.value}' via MQTT ACK from '{device_uid}'")
+        logger.debug(f"Updated MotorCommand '{command_id}' to status '{command.status.value}' via MQTT ACK from '{device_uid}'")
 
         # Extract hierarchy for WebSocket broadcast
         ctrl = motor.controller if motor else None

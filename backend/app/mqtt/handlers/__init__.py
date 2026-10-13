@@ -31,7 +31,7 @@ async def setup_mqtt_handlers(
     wildcards = router.get_subscription_wildcards()
     for topic in wildcards:
         await client.subscribe(topic, qos=1)
-        logger.info(f"MQTT handler auto-subscribed to wildcard: {topic}")
+        logger.debug(f"MQTT handler auto-subscribed to wildcard: {topic}")
 
 
 __all__ = [
