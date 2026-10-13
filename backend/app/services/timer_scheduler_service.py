@@ -293,7 +293,7 @@ class TimerSchedulerService:
         # Idempotency: prevent double-clicks within 5 seconds
         last_time = self._last_continue_times.get(motor.id)
         if last_time and (now - last_time).total_seconds() < 5:
-            logger.info(f"Duplicate continue request ignored for motor '{motor.motor_code}' (within cooldown)")
+            logger.debug(f"Duplicate continue request ignored for motor '{motor.motor_code}' (within cooldown)")
             return await self.get_motor_timer_status(session, motor_id, now)
 
         self._last_continue_times[motor.id] = now
@@ -557,6 +557,30 @@ class TimerSchedulerService:
                                 device_uid=motor.controller.device_uid,
                                 payload={"command_id": str(stop_cmd.id), "status": "EXECUTED"}
                             )
+
+                        try:
+                            await log_audit_event(
+                                session=session,
+                                action=AuditAction.STOP,
+                                resource_type="Motor",
+                                resource_id=motor.id,
+                                action_description=(
+                                    f"Auto-stopped motor {motor.motor_code} after schedule '{sched_name}' finished"
+                                    if sched_name else
+                                    f"Auto-stopped motor {motor.motor_code} after timer expired"
+                                ),
+                                actor_type=AuditActorType.SYSTEM,
+                                actor_user_id=None,
+                                organization_id=org_id,
+                                audit_metadata={
+                                    "schedule_name": sched_name,
+                                    "runtime_seconds": eval_res.elapsed_seconds,
+                                    "stop_reason": stop_reason,
+                                    "command_id": str(stop_cmd.id),
+                                },
+                            )
+                        except Exception as a_err:
+                            logger.warning(f"Error logging auto-stop audit event: {a_err}")
                     except Exception as e:
                         reason = f"STOP_DISPATCH_FAILED: {str(e)}"
 
@@ -687,7 +711,7 @@ class TimerSchedulerService:
             day_matches = any(k in rule_days_normalized for k in valid_today_keys)
             time_matches = (start_clean == current_time_str)
 
-            logger.info(
+            logger.debug(
                 f"[SCHEDULER_CHECK] Schedule '{rule.name}' ({rule.id}) | Local {site_tz}: {current_time_str} | Scheduled: {start_clean} | "
                 f"Today: {local_dt.strftime('%A')} (match={day_matches}) | TimeMatch: {time_matches}"
             )
@@ -701,7 +725,7 @@ class TimerSchedulerService:
                 continue
 
             self._scheduled_triggers[rule.id] = minute_key
-            logger.info(f"[SCHEDULER_TRIGGER] Executing schedule '{rule.name}' ({rule.id}) for motor '{rule.motor_id}' at {current_time_str}")
+            logger.debug(f"[SCHEDULER_TRIGGER] Executing schedule '{rule.name}' ({rule.id}) for motor '{rule.motor_id}' at {current_time_str}")
 
             motor_stmt = (
                 select(Motor)
@@ -785,6 +809,7 @@ class TimerSchedulerService:
                     "schedule_name": rule_name,
                     "duration_seconds": rule.duration_seconds,
                     "source": "SCHEDULED",
+                    "started_at": datetime.now(timezone.utc).isoformat(),
                 }
 
                 # In standalone software mode without active MQTT client, auto-acknowledge command
