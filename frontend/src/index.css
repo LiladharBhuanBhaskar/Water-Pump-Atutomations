@@ -4,7 +4,8 @@
 
 :root {
   color-scheme: light;
-  --font-sans: 'Poppins', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   --sat: env(safe-area-inset-top, 0px);
   --sab: env(safe-area-inset-bottom, 0px);
   --sal: env(safe-area-inset-left, 0px);
@@ -15,32 +16,46 @@
   box-sizing: border-box;
 }
 
-body {
+html, body {
   margin: 0;
-  min-height: 100vh;
-  min-height: 100dvh;
+  padding: 0;
+  width: 100%;
+  height: 100%;
   background-color: #f8fafc;
   color: #0f172a;
   font-family: var(--font-sans);
   overflow-x: hidden;
   -webkit-tap-highlight-color: transparent;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* Safe Area Inset Helpers for Android/iOS Notch & Cutouts */
+/* Tabular figures for telemetry meters, timers, and sensor readouts */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+/* Safe Area Inset Helpers for Android & iOS Notches, Holes & System Bars */
 .pt-safe {
-  padding-top: env(safe-area-inset-top, 0px);
+  padding-top: max(0.625rem, env(safe-area-inset-top, 0px));
 }
 
 .pb-safe {
-  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom, 0px));
 }
 
 .pl-safe {
-  padding-left: env(safe-area-inset-left, 0px);
+  padding-left: max(0.75rem, env(safe-area-inset-left, 0px));
 }
 
 .pr-safe {
-  padding-right: env(safe-area-inset-right, 0px);
+  padding-right: max(0.75rem, env(safe-area-inset-right, 0px));
+}
+
+/* Guaranteed Bottom Clearance so fixed Dock never blocks any card, button, or slider */
+.pb-dock-clearance {
+  padding-bottom: max(7.5rem, calc(5.75rem + env(safe-area-inset-bottom, 0px)));
 }
 
 /* Clean Custom Scrollbar */
@@ -62,89 +77,75 @@ body {
   background: #94a3b8;
 }
 
-/* Crisp Clean White Cards (No Drop Shadows, 1px Clean Border) */
+/* Standard Professional Industrial Cards */
 .mobile-card {
   background: #ffffff;
   border: 1px solid #e2e8f0;
-  border-radius: 1rem;
-  box-shadow: none;
-  transition: border-color 0.15s ease, background-color 0.15s ease;
+  border-radius: 0.875rem;
+  box-shadow: 0 1px 3px 0 rgba(15, 23, 42, 0.04), 0 1px 2px -1px rgba(15, 23, 42, 0.04);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .mobile-card:hover {
-  border-color: #93c5fd;
-  box-shadow: none;
+  border-color: #cbd5e1;
 }
 
-/* Flat Bottom Navigation Dock */
-.bottom-nav-dock {
-  background: #ffffff;
-  border-top: 1px solid #e2e8f0;
-  box-shadow: none;
-}
-
-/* Floating Elevated Center Power Button */
-.floating-power-btn {
-  background: #2563eb;
-  border: 3px solid #ffffff;
-  box-shadow: 0 8px 25px rgba(37, 99, 235, 0.45), inset 0 2px 2px rgba(255, 255, 255, 0.35);
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.floating-power-btn:hover {
-  background: #1d4ed8;
-  transform: translateY(-2px) scale(1.04);
-  box-shadow: 0 12px 30px rgba(37, 99, 235, 0.55), inset 0 2px 2px rgba(255, 255, 255, 0.45);
-}
-
-.floating-power-btn:active {
-  transform: scale(0.94);
-}
-
-.floating-power-btn-running {
-  background: #ef4444;
-  border: 3px solid #ffffff;
-  box-shadow: 0 8px 25px rgba(239, 68, 68, 0.5), inset 0 2px 2px rgba(255, 255, 255, 0.35);
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.floating-power-btn-running:hover {
-  background: #dc2626;
-}
-
-/* Pulsating Halo Animation */
-@keyframes ring-pulse {
-  0% {
-    transform: scale(0.96);
-    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.6);
-  }
-
-  70% {
-    transform: scale(1.02);
-    box-shadow: 0 0 0 14px rgba(239, 68, 68, 0);
-  }
-
-  100% {
-    transform: scale(0.96);
-    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
-  }
-}
-
-.animate-ring-pulse {
-  animation: ring-pulse 2s infinite;
-}
-
-/* Clean Form Inputs */
-.glass-input {
+/* Standard Form Inputs (16px font prevents iOS/Android webview auto-zoom distortions) */
+.glass-input, .std-input {
   background: #ffffff;
   border: 1px solid #cbd5e1;
   color: #0f172a;
   border-radius: 0.75rem;
-  transition: border-color 0.15s ease;
+  font-size: 0.875rem;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
-.glass-input:focus {
+.glass-input:focus, .std-input:focus {
   outline: none;
   border-color: #2563eb;
-  box-shadow: none;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+/* Floating Center Power Button - Crisp tactile feel without gimmicky glow */
+.floating-power-btn {
+  background: #1d4ed8;
+  border: 3px solid #ffffff;
+  box-shadow: 0 6px 16px rgba(29, 78, 216, 0.35);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.floating-power-btn:hover {
+  background: #1e40af;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(29, 78, 216, 0.45);
+}
+
+.floating-power-btn:active {
+  transform: scale(0.95);
+}
+
+.floating-power-btn-running {
+  background: #dc2626;
+  border: 3px solid #ffffff;
+  box-shadow: 0 6px 16px rgba(220, 38, 38, 0.35);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.floating-power-btn-running:hover {
+  background: #b91c1c;
+}
+
+/* Modal Bottom-Sheet & Dialog Responsive Viewport Constraints */
+.modal-viewport-container {
+  max-height: calc(100dvh - 2rem);
+  max-height: calc(100vh - 2rem);
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-viewport-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
