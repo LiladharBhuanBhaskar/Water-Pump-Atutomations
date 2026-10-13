@@ -58,14 +58,18 @@ class CorrelationAndLoggingMiddleware(BaseHTTPMiddleware):
             except Exception:
                 pass
 
-            # Structured JSON log entry
-            log_payload = {
-                "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                "correlation_id": correlation_id,
-                "method": request.method,
-                "path": path,
-                "status_code": status_code,
-                "duration_ms": duration_ms,
-                "client_ip": request.client.host if request.client else "unknown",
-            }
-            logger.info(json.dumps(log_payload))
+            # Only log errors (4xx/5xx) or slow requests (>1000ms) — skip routine 2xx noise
+            is_error = status_code >= 400
+            is_slow = duration_ms > 1000
+            if is_error or is_slow:
+                log_payload = {
+                    "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                    "correlation_id": correlation_id,
+                    "method": request.method,
+                    "path": path,
+                    "status_code": status_code,
+                    "duration_ms": duration_ms,
+                    "client_ip": request.client.host if request.client else "unknown",
+                }
+                log_fn = logger.error if is_error else logger.warning
+                log_fn(json.dumps(log_payload))
