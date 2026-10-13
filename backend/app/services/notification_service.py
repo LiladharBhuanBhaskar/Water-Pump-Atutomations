@@ -72,7 +72,7 @@ class MockEmailNotificationProvider(BaseNotificationProvider):
             "timestamp": payload.timestamp,
             "metadata": payload.metadata,
         })
-        logger.info(f"[MOCK EMAIL] Sent: {payload.title}")
+        logger.debug(f"[MOCK EMAIL] Sent: {payload.title}")
         return True
 
 
@@ -90,7 +90,7 @@ class MockSmsNotificationProvider(BaseNotificationProvider):
             "timestamp": payload.timestamp,
             "metadata": payload.metadata,
         })
-        logger.info(f"[MOCK SMS] Sent: {payload.title}")
+        logger.debug(f"[MOCK SMS] Sent: {payload.title}")
         return True
 
 
