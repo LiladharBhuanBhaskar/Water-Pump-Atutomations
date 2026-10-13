@@ -2,10 +2,12 @@ import sys
 import os
 from pathlib import Path
 
-# Ensure backend directory is in sys.path
+# Ensure backend and workspace directories are in sys.path
 backend_dir = Path(__file__).resolve().parent.parent
-if str(backend_dir) not in sys.path:
-    sys.path.insert(0, str(backend_dir))
+root_dir = backend_dir.parent
+for p in (str(backend_dir), str(root_dir)):
+    if p not in sys.path:
+        sys.path.insert(0, p)
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -54,11 +56,18 @@ except ImportError:
     from backend.app.api.v1.websocket import router as ws_router
 
 
-# Configure logging
+# Configure logging — only show important output (errors, warnings, startup banner)
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.WARNING,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 )
+# App logger at WARNING — only errors/warnings print by default
+logging.getLogger("hydracontrol").setLevel(logging.WARNING)
+# Silence noisy third-party libraries
+for _noisy in ("uvicorn.access", "uvicorn.error", "sqlalchemy", "sqlalchemy.engine",
+               "aio_pika", "asyncio", "aiormq", "paho", "asyncio_mqtt",
+               "watchfiles", "httpcore", "httpx"):
+    logging.getLogger(_noisy).setLevel(logging.WARNING)
 logger = logging.getLogger("hydracontrol")
 
 
@@ -110,21 +119,8 @@ def get_database_identity():
 
 def print_database_identity():
     ident = get_database_identity()
-    print("==================================================")
-    print("HYDRACONTROL DATABASE IDENTITY")
-    print("==================================================")
-    print(f"PID: {ident['pid']}")
-    print(f"PROCESS CWD: {ident['cwd']}")
-    print(f"DATABASE_URL: {ident['database_url']}")
-    print(f"RESOLVED DATABASE PATH: {ident['resolved_path']}")
-    print(f"DATABASE REALPATH: {ident['realpath']}")
-    print(f"DATABASE EXISTS: {ident['exists']}")
-    print(f"DATABASE FILE SIZE: {ident['file_size']} bytes")
-    print(f"DATABASE TABLE COUNT: {ident['table_count']}")
-    print(f"USERS TABLE EXISTS: {ident['users_table_exists']}")
-    print(f"USER COUNT: {ident['user_count']}")
-    print(f"ALEMBIC REVISION: {ident['alembic_revision']}")
-    print("==================================================")
+    status = "OK" if ident['exists'] and ident['users_table_exists'] else "MISSING"
+    print(f"\n  [HydraControl] DB {status} | {ident['table_count']} tables, {ident['user_count']} users | rev {ident['alembic_revision']}")
 
 
 import asyncio
@@ -133,7 +129,7 @@ from app.services.timer_scheduler_service import timer_scheduler
 
 
 async def _scheduler_background_loop():
-    logger.info("Starting background Timer & Schedule evaluator loop...")
+    logger.debug("Starting background Timer & Schedule evaluator loop...")
     while True:
         try:
             async with AsyncSessionLocal() as session:
@@ -141,18 +137,31 @@ async def _scheduler_background_loop():
                 await timer_scheduler.check_and_process_motor_timers(session)
                 await session.commit()
         except asyncio.CancelledError:
-            logger.info("Scheduler loop cancelled.")
+            logger.debug("Scheduler loop cancelled.")
             break
         except Exception as e:
-            logger.error(f"Error in scheduler background loop: {e}", exc_info=False)
+            logger.error(f"Scheduler loop error: {e}", exc_info=False)
         await asyncio.sleep(5)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print_database_identity()
-    logger.info(f"Starting {settings.PROJECT_NAME} in {settings.ENVIRONMENT} mode...")
+    
+    # Initialize MQTT Handlers & Start MQTT Client Service (Non-blocking)
+    mqtt_ok = False
+    try:
+        from app.mqtt.handlers import setup_mqtt_handlers
+        from app.mqtt.client import mqtt_client_service
+        await setup_mqtt_handlers()
+        await mqtt_client_service.start()
+        mqtt_ok = True
+    except Exception as e:
+        logger.warning(f"MQTT unavailable (non-fatal): {e}")
+
     scheduler_task = asyncio.create_task(_scheduler_background_loop())
+    mqtt_status = "MQTT OK" if mqtt_ok else "MQTT FAIL"
+    print(f"  {mqtt_status} | Scheduler OK | {settings.ENVIRONMENT} mode | Ready on :8000\n")
     try:
         yield
     finally:
@@ -161,7 +170,12 @@ async def lifespan(app: FastAPI):
             await scheduler_task
         except asyncio.CancelledError:
             pass
-        logger.info(f"Shutting down {settings.PROJECT_NAME}...")
+        try:
+            from app.mqtt.client import mqtt_client_service
+            await mqtt_client_service.stop()
+        except Exception:
+            pass
+        print("  HydraControl shut down.")
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
