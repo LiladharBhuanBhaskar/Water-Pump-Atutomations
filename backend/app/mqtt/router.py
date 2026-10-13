@@ -160,6 +160,10 @@ class MQTTRouter:
         """
         wildcards = set()
         for r in self._routes:
+            # Skip generic short prefixes ('devices/...') when generating broker wildcards
+            # to avoid intercepting third-party public traffic on shared brokers.
+            if r.pattern.startswith("devices/"):
+                continue
             # Replace parameterized segments {param} with '+'
             segments = r.pattern.split("/")
             converted = []

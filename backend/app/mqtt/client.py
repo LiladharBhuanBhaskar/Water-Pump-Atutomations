@@ -96,7 +96,7 @@ class MQTTClientService:
     async def start(self) -> None:
         """Initialize the MQTT client, start network loop and message dispatcher."""
         if self._is_running:
-            logger.warning("MQTT client service is already running.")
+            logger.debug("MQTT client service is already running.")
             return
 
         self._loop = asyncio.get_running_loop()
@@ -124,7 +124,7 @@ class MQTTClientService:
         self._dispatch_task = asyncio.create_task(self._process_message_queue())
 
         try:
-            logger.info(f"Connecting to MQTT Broker at {self.host}:{self.port} (Client ID: {self.client_id})...")
+            logger.debug(f"Connecting to MQTT Broker at {self.host}:{self.port}...")
             self._client.connect_async(self.host, self.port, keepalive=self.keepalive)
             self._client.loop_start()
         except Exception as e:
@@ -152,7 +152,7 @@ class MQTTClientService:
                 pass
             self._dispatch_task = None
 
-        logger.info("MQTT client service stopped.")
+        logger.debug("MQTT client service stopped.")
 
     async def subscribe(self, topic: str, qos: int = 1) -> bool:
         """Subscribe to an MQTT topic pattern."""
@@ -215,12 +215,12 @@ class MQTTClientService:
 
     def _on_connect(self, client: mqtt.Client, userdata: Any, flags: Any, reason_code: Any, properties: Any = None) -> None:
         if reason_code == 0:
-            logger.info(f"MQTT Connected successfully to {self.host}:{self.port}")
+            logger.debug(f"MQTT Connected to {self.host}:{self.port}")
             self.status = MQTTConnectionStatus.CONNECTED
             # Restore subscriptions upon connection or reconnection
             for topic, qos in self._subscriptions:
                 client.subscribe(topic, qos=qos)
-                logger.info(f"Subscribed to MQTT topic '{topic}' (QoS {qos})")
+                logger.debug(f"Subscribed to MQTT topic '{topic}' (QoS {qos})")
         else:
             logger.error(f"MQTT connection failed with reason code: {reason_code}")
             self.status = MQTTConnectionStatus.ERROR
@@ -230,7 +230,7 @@ class MQTTClientService:
             logger.warning(f"MQTT disconnected unexpectedly (rc: {reason_code}). Reconnecting in background...")
             self.status = MQTTConnectionStatus.RECONNECTING
         else:
-            logger.info("MQTT disconnected cleanly.")
+            logger.debug("MQTT disconnected cleanly.")
             self.status = MQTTConnectionStatus.DISCONNECTED
 
     def _on_message(self, client: mqtt.Client, userdata: Any, msg: mqtt.MQTTMessage) -> None:
@@ -261,7 +261,7 @@ class MQTTClientService:
 
     async def _process_message_queue(self) -> None:
         """Continuously consume incoming MQTT messages from queue and dispatch to callbacks."""
-        logger.info("MQTT message queue processor started.")
+        logger.debug("MQTT message queue processor started.")
         while self._is_running:
             try:
                 msg = await self._message_queue.get()
