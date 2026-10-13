@@ -198,16 +198,16 @@ export const UserSubscriptionAdminModal: React.FC<UserSubscriptionAdminModalProp
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-slate-950/80 backdrop-blur-md animate-fade-in font-['Poppins',sans-serif]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in font-sans">
       {/* Toast Alert */}
       {toastMessage && (
-        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-60 px-4 py-2 rounded-2xl bg-slate-900 text-white text-xs font-bold flex items-center gap-2 border border-blue-500/50 backdrop-blur-md">
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-60 px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-semibold flex items-center gap-2 border border-slate-700 shadow-xl backdrop-blur-md animate-fade-in">
           <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
           <span>{toastMessage}</span>
         </div>
       )}
 
-      <div className="bg-white w-full max-w-xl rounded-3xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]">
+      <div className="bg-white w-full max-w-xl rounded-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90dvh] shadow-2xl">
         {/* Header */}
         <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-slate-900 via-slate-800 to-teal-950 text-white">
           <div className="flex items-center gap-2.5">

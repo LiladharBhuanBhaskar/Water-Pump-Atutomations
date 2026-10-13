@@ -109,8 +109,8 @@ export const DeviceCommissioningModal: React.FC<DeviceCommissioningModalProps> =
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="relative w-full max-w-lg bg-white sm:rounded-[28px] rounded-t-[28px] border border-slate-200 overflow-hidden flex flex-col max-h-[92vh] font-['Poppins',sans-serif]">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/60 backdrop-blur-sm animate-fade-in">
+      <div className="relative w-full max-w-lg bg-white sm:rounded-2xl rounded-t-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90dvh] font-sans">
         {/* Modal Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-slate-50/50">
           <div className="flex items-center gap-3">
@@ -300,7 +300,7 @@ export const DeviceCommissioningModal: React.FC<DeviceCommissioningModalProps> =
         </div>
 
         {/* Modal Footer Controls */}
-        <div className="px-5 py-3 border-t border-slate-100 bg-slate-50/50 flex items-center justify-between">
+        <div className="px-5 py-3 border-t border-slate-100 bg-slate-50/50 flex items-center justify-between pb-[max(0.75rem,env(safe-area-inset-bottom,0px))]">
           {step > 1 && step < 4 ? (
             <button
               type="button"
