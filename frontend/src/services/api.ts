@@ -37,8 +37,8 @@ import {
 } from '../types';
 
 export const DEFAULT_CLOUDFLARE_URL =
-  ((import.meta as any).env?.VITE_API_BASE_URL as string) ||
-  'https://repository-fighters-voting-bingo.trycloudflare.com';
+  (((import.meta as any).env?.VITE_API_BASE_URL as string) || '').trim() ||
+  'https://ebony-beads-earn-recorders.trycloudflare.com';
 
 export function isNativeCapacitorApp(): boolean {
   if (typeof window === 'undefined') return false;
@@ -55,12 +55,17 @@ export function isNativeCapacitorApp(): boolean {
     return true;
   }
 
-  // 3. Android Capacitor WebView serves from https://localhost or http://localhost with NO port
-  const isLocalhostNoPort =
-    (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') &&
-    (window.location.port === '' || window.location.port === '80' || window.location.port === '443');
+  // 3. Android Capacitor WebView serves from http://localhost or https://localhost
+  const isLocalhost =
+    window.location.hostname === 'localhost' ||
+    window.location.hostname === '127.0.0.1';
 
-  if (isLocalhostNoPort && window.location.port !== '5173') {
+  if (isLocalhost && window.location.port !== '5173') {
+    return true;
+  }
+
+  // 4. Android WebView User-Agent signature
+  if (/Android.*wv|Version\/.*Chrome/i.test(navigator.userAgent) && isLocalhost) {
     return true;
   }
 
@@ -68,19 +73,40 @@ export function isNativeCapacitorApp(): boolean {
 }
 
 export function getServerBaseUrl(): string {
-  // Check if custom server URL is saved
-  const savedUrl = localStorage.getItem('hydra_server_url') || localStorage.getItem('hydra_mobile_server_url') || localStorage.getItem('hydra_web_custom_server');
+  // 1. Explicit user override from localStorage (with auto-migration for stale ephemeral tunnels)
+  const savedUrl =
+    localStorage.getItem('hydra_server_url') ||
+    localStorage.getItem('hydra_mobile_server_url') ||
+    localStorage.getItem('hydra_web_custom_server');
+
   if (savedUrl && savedUrl.trim()) {
-    return savedUrl.trim().replace(/\/+$/, '');
+    const cleanSaved = savedUrl.trim().replace(/\/+$/, '');
+    // If the saved URL is a stale Cloudflare tunnel URL that differs from current active tunnel, auto-migrate!
+    if (cleanSaved.includes('trycloudflare.com') && cleanSaved !== DEFAULT_CLOUDFLARE_URL) {
+      localStorage.setItem('hydra_server_url', DEFAULT_CLOUDFLARE_URL);
+      localStorage.setItem('hydra_mobile_server_url', DEFAULT_CLOUDFLARE_URL);
+      localStorage.setItem('hydra_web_custom_server', DEFAULT_CLOUDFLARE_URL);
+      return DEFAULT_CLOUDFLARE_URL;
+    }
+    return cleanSaved;
   }
 
-  // If running inside native Android / Capacitor container, default to Cloudflare remote URL
+  // 2. Running inside APK or mobile container: ALWAYS connect to Cloudflare remote
   if (isNativeCapacitorApp()) {
     return DEFAULT_CLOUDFLARE_URL;
   }
 
-  // On standard Web browser on localhost, use relative proxy /api/v1 (or Cloudflare)
-  return '';
+  // 3. In production bundle: ALWAYS default to Cloudflare remote
+  if ((import.meta as any).env?.PROD && DEFAULT_CLOUDFLARE_URL) {
+    return DEFAULT_CLOUDFLARE_URL;
+  }
+
+  // 4. Only in Vite dev mode on localhost:5173 with Vite proxy enabled: use relative path
+  if (typeof window !== 'undefined' && window.location.port === '5173') {
+    return '';
+  }
+
+  return DEFAULT_CLOUDFLARE_URL;
 }
 
 export function getApiBaseUrl(): string {
@@ -108,10 +134,20 @@ class ApiService {
     }
 
     const apiBase = getApiBaseUrl();
-    const response = await fetch(`${apiBase}${endpoint}`, {
-      ...options,
-      headers,
-    });
+    let response: Response;
+    try {
+      response = await fetch(`${apiBase}${endpoint}`, {
+        ...options,
+        headers,
+      });
+    } catch (err: any) {
+      if (err.name === 'TypeError' || err.message?.toLowerCase().includes('fetch')) {
+        throw new Error(
+          `Unable to connect to server (${apiBase}). Please verify your internet connection or check Server Host URL in settings.`
+        );
+      }
+      throw err;
+    }
 
     if (response.status === 401) {
       // Clear token on 401 Unauthorized
@@ -141,16 +177,26 @@ class ApiService {
   // Authentication Endpoints
   async login(email: string, password: string): Promise<{ access_token: string; token_type: string; refresh_token?: string; user?: User }> {
     const apiBase = getApiBaseUrl();
-    const response = await fetch(`${apiBase}/auth/login`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ email: email.trim(), password }),
-    });
+    let response: Response;
+    try {
+      response = await fetch(`${apiBase}/auth/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email: email.trim(), password }),
+      });
+    } catch (err: any) {
+      if (err.name === 'TypeError' || err.message?.toLowerCase().includes('fetch')) {
+        throw new Error(
+          `Unable to connect to server (${apiBase}). Please check your internet connection or configure the server URL.`
+        );
+      }
+      throw err;
+    }
 
     if (!response.ok) {
-      let errorDetail = 'Invalid credentials';
+      let errorDetail = 'Invalid email or password';
       try {
         const errorJson = await response.json();
         errorDetail = errorJson.detail || errorDetail;
@@ -250,9 +296,10 @@ class ApiService {
     });
   }
 
-  async stopMotor(motorId: string): Promise<MotorCommand> {
+  async stopMotor(motorId: string, payload?: Record<string, any>): Promise<MotorCommand> {
     return this.request<MotorCommand>(`/motors/${motorId}/stop`, {
       method: 'POST',
+      body: payload ? JSON.stringify({ payload }) : undefined,
     });
   }
 
