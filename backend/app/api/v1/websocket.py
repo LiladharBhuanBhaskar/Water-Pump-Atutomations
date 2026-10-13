@@ -178,7 +178,7 @@ async def websocket_endpoint(
                 })
 
     except WebSocketDisconnect:
-        logger.info(f"WebSocket client disconnected cleanly: user_id={current_user.id}")
+        logger.debug(f"WebSocket client disconnected cleanly: user_id={current_user.id}")
     except Exception as e:
         logger.error(f"Unexpected WebSocket error for user_id={current_user.id}: {e}", exc_info=True)
     finally:

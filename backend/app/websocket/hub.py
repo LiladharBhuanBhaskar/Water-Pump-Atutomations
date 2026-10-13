@@ -84,7 +84,7 @@ class WebSocketHub:
                     self._channel_subscribers[org_ch] = set()
                 self._channel_subscribers[org_ch].add(websocket)
 
-            logger.info(
+            logger.debug(
                 f"WebSocket connected: user_id={user_id}, org_id={organization_id}, role={role.value}"
             )
             return conn
@@ -99,7 +99,7 @@ class WebSocketHub:
                         self._channel_subscribers[channel].discard(websocket)
                         if not self._channel_subscribers[channel]:
                             del self._channel_subscribers[channel]
-                logger.info(f"WebSocket disconnected: user_id={conn.user_id}")
+                logger.debug(f"WebSocket disconnected: user_id={conn.user_id}")
             return conn
 
     async def get_connection(self, websocket: WebSocket) -> Optional[WebSocketConnection]:
