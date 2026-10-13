@@ -27,9 +27,9 @@ export const Badge: React.FC<BadgeProps> = ({
 
   const dotStyles = {
     default: 'bg-slate-400',
-    success: 'bg-emerald-400 animate-pulse',
+    success: 'bg-emerald-400',
     warning: 'bg-amber-400',
-    danger: 'bg-rose-400 animate-ping',
+    danger: 'bg-rose-400 ring-2 ring-rose-400/20',
     info: 'bg-cyan-400',
     purple: 'bg-purple-400',
     neutral: 'bg-slate-500',
