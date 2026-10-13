@@ -12,15 +12,26 @@ void HydraMqttClient::init() {
 }
 
 void HydraMqttClient::reconnect() {
-    while (!mqttClient.connected()) {
+    int attempts = 0;
+    while (!mqttClient.connected() && attempts < 3) {
         Serial.print("[MQTT] Attempting connection to broker...");
-        if (mqttClient.connect(DEVICE_UID, MQTT_USER, MQTT_PASS)) {
+        bool connected = false;
+        if (strlen(MQTT_USER) > 0) {
+            connected = mqttClient.connect(DEVICE_UID, MQTT_USER, MQTT_PASS);
+        } else {
+            connected = mqttClient.connect(DEVICE_UID);
+        }
+
+        if (connected) {
             Serial.println(" connected.");
             mqttClient.subscribe(TOPIC_COMMANDS);
             Serial.printf("[MQTT] Subscribed to %s\n", TOPIC_COMMANDS);
+            sendHeartbeat();
+            break;
         } else {
-            Serial.printf(" failed, rc=%d. Retrying in 5 seconds...\n", mqttClient.state());
-            delay(5000);
+            Serial.printf(" failed, rc=%d. Will retry in loop.\n", mqttClient.state());
+            delay(1000);
+            attempts++;
         }
     }
 }
@@ -107,6 +118,9 @@ void HydraMqttClient::messageCallback(char* topic, byte* payload, unsigned int l
 
     const char* command_id = doc["command_id"];
     const char* action = doc["action"];
+    if (!action) {
+        action = doc["command_type"];
+    }
 
     if (!action) return;
 
@@ -123,7 +137,7 @@ void HydraMqttClient::messageCallback(char* topic, byte* payload, unsigned int l
     } else if (strcmp(action, "EMERGENCY_STOP") == 0) {
         safetyEngine.triggerEmergencyStop();
         hydraMqtt.sendAck(command_id, "EXECUTED", "Emergency stop triggered");
-    } else if (strcmp(action, "RESET_FAULT") == 0) {
+    } else if (strcmp(action, "RESET") == 0 || strcmp(action, "RESET_FAULT") == 0) {
         safetyEngine.resetFault();
         hydraMqtt.sendAck(command_id, "EXECUTED", "Fault cleared");
     }

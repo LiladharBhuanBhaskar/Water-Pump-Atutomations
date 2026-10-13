@@ -11,17 +11,19 @@
 #define WIFI_SSID "HydraNet_Secure"
 #define WIFI_PASSWORD "HydraSecretKey"
 
-// MQTT Configuration
-#define MQTT_BROKER "mqtt.hydracontrol.local"
+// Remote MQTT Configuration (Cloud / Public Broker for Remote Internet Access)
+#define MQTT_BROKER "broker.emqx.io"
 #define MQTT_PORT 1883 // 8883 for TLS
-#define MQTT_USER "esp32_device_user"
-#define MQTT_PASS "device_auth_token"
+#define MQTT_USER ""
+#define MQTT_PASS ""
 
-// MQTT Topics
-#define TOPIC_TELEMETRY "hydracontrol/telemetry"
-#define TOPIC_HEARTBEAT "hydracontrol/heartbeat"
-#define TOPIC_COMMANDS  "hydracontrol/commands/" DEVICE_UID
-#define TOPIC_ACK       "hydracontrol/ack"
+// MQTT Standard Topics (Matches Backend MQTTRouter Hierarchy)
+#define TOPIC_TELEMETRY "hydracontrol/devices/" DEVICE_UID "/telemetry"
+#define TOPIC_HEARTBEAT "hydracontrol/devices/" DEVICE_UID "/heartbeat"
+#define TOPIC_COMMANDS  "hydracontrol/devices/" DEVICE_UID "/commands"
+#define TOPIC_ACK       "hydracontrol/devices/" DEVICE_UID "/ack"
+#define TOPIC_STATUS    "hydracontrol/devices/" DEVICE_UID "/status"
+#define TOPIC_FAULT     "hydracontrol/devices/" DEVICE_UID "/fault"
 
 // Hardware Pinout Mapping
 #define PIN_RELAY_MOTOR_START  25  // Drives Contactor Coil Relay
