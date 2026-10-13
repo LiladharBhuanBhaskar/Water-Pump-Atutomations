@@ -20,6 +20,7 @@ from app.models.site import Site, SiteStatus
 from app.mqtt.client import mqtt_client_service, MQTTClientService
 from app.mqtt.router import build_device_command_topic
 from app.websocket.streamer import stream_command_lifecycle, stream_motor_state, stream_safety_alert
+from app.core.config import settings
 from app.services.motor_state_engine import (
     transition_motor_state,
     MotorStateEvent,
@@ -212,7 +213,7 @@ async def dispatch_motor_command(
             except Exception as e:
                 logger.warning(f"MQTT publish error on topic '{topic}': {e}")
         else:
-            logger.info(f"MQTT broker not connected; queued as PENDING for topic '{topic}'")
+            logger.debug(f"MQTT broker not connected; queued as PENDING for topic '{topic}'")
             published = False
 
     if published:
@@ -240,7 +241,14 @@ async def dispatch_motor_command(
             motor.status = transition_res.next_state
             session.add(motor)
 
-            if transition_res.event_type is not None:
+            effective_event_type = transition_res.event_type
+            if effective_event_type is None:
+                if cmd_type == CommandType.START:
+                    effective_event_type = MotorEventType.STARTED
+                elif cmd_type in (CommandType.STOP, CommandType.EMERGENCY_STOP):
+                    effective_event_type = MotorEventType.STOPPED
+
+            if effective_event_type is not None:
                 is_auto_or_schedule = False
                 if cmd_payload and isinstance(cmd_payload, dict):
                     reason_str = str(cmd_payload.get("reason", "")).upper()
@@ -260,15 +268,23 @@ async def dispatch_motor_command(
                         desc_text = f"Schedule Completed: {sched}" if cmd_type == CommandType.STOP else f"Schedule: {sched}"
                     elif cmd_payload.get("reason") == "MANUAL_STOP":
                         desc_text = "Manual stop command by operator"
+                    elif cmd_payload.get("reason") == "MANUAL_START":
+                        desc_text = "Manual start command by operator"
                     elif cmd_payload.get("reason") == "TIMER_EXPIRED":
                         desc_text = "Timer Expired - Normal Auto Stop"
                     elif cmd_payload.get("description"):
                         desc_text = str(cmd_payload.get("description"))
+                elif effective_event_type == MotorEventType.STARTED:
+                    desc_text = "Manual start command by operator"
+                elif effective_event_type == MotorEventType.STOPPED:
+                    desc_text = "Manual stop command by operator"
+                elif effective_event_type == MotorEventType.RESET:
+                    desc_text = "Manual fault reset by operator"
 
                 event_entry = MotorEvent(
                     id=uuid.uuid4(),
                     motor_id=motor.id,
-                    event_type=transition_res.event_type,
+                    event_type=effective_event_type,
                     source=event_source,
                     occurred_at=command.sent_at or datetime.now(timezone.utc),
                     event_payload=cmd_payload,
@@ -306,7 +322,7 @@ async def dispatch_motor_command(
 
     await session.commit()
     await session.refresh(command)
-    logger.info(f"Dispatched MotorCommand '{command.id}' ({cmd_type.value}) -> {topic} [{command.status.value}]")
+    logger.debug(f"Dispatched MotorCommand '{command.id}' ({cmd_type.value}) -> {topic} [{command.status.value}]")
 
     if published:
         try:
@@ -326,9 +342,10 @@ async def dispatch_motor_command(
                 if transition_res.event_type in (MotorEventType.FAULT, MotorEventType.EMERGENCY_STOP):
                     await stream_safety_alert(
                         event_type=transition_res.event_type,
-                        station_id=station.id,
-                        device_uid=controller.device_uid,
+                        motor_id=motor.id,
                         motor_code=motor.motor_code,
+                        device_uid=controller.device_uid,
+                        station_id=station.id,
                         organization_id=site.organization_id,
                         site_id=site.id,
                         description=transition_res.reason,

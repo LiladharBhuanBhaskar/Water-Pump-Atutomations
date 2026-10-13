@@ -106,8 +106,12 @@ async def process_command_timeouts(
 
             old_motor_status = motor.status if motor else None
             motor_reverted = False
-            # Revert unconfirmed STARTING state to OFF so motor does not remain falsely STARTING/ON
+            # Revert unconfirmed STARTING or STOPPING state to OFF so motor does not remain falsely locked
             if motor and cmd.command_type == CommandType.START and motor.status == MotorStatus.STARTING:
+                motor.status = MotorStatus.OFF
+                session.add(motor)
+                motor_reverted = True
+            elif motor and cmd.command_type == CommandType.STOP and motor.status == MotorStatus.STOPPING:
                 motor.status = MotorStatus.OFF
                 session.add(motor)
                 motor_reverted = True
