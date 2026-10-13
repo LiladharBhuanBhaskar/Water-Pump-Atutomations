@@ -34,6 +34,7 @@ import {
 } from '../types';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { useLanguage } from '../context/LanguageContext';
 import { MobileNavDock, MobileTab } from '../components/MobileNavDock';
 import { ScheduleManagerModal } from '../components/ScheduleManagerModal';
 import { NotificationPreferencesModal } from '../components/NotificationPreferencesModal';
@@ -145,6 +146,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
   onAdminSwitch,
 }) => {
   const { user, logout, isOperator } = useAuth();
+  const { t } = useLanguage();
   const [activeTab, setActiveTab] = useState<MobileTab>('HOME');
   const [activeServiceScreen, setActiveServiceScreen] = useState<ServiceViewType>(null);
 
@@ -219,7 +221,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
     motorRef.current = motor;
   }, [motor]);
 
-  const isMotorRunning = motor?.status === 'ON';
+  const isMotorRunning = motor?.status === 'ON' || motor?.status === 'STARTING';
 
   // High-performance background sync
   const loadData = useCallback(async (showVisualSpinner = false) => {
@@ -449,11 +451,14 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
       setRemainingSeconds(0);
 
       try {
-        await api.stopMotor(motor.id);
+        await api.stopMotor(motor.id, {
+          reason: 'MANUAL_STOP',
+          description: 'Manual stop command by operator',
+        });
         setToastMessage(`Pump (${motor.motor_code}) Stopped`);
         audioAlert.testSound('INFO');
         setTimeout(() => setToastMessage(null), 2500);
-        debouncedSync(100);
+        await loadData(false);
       } catch (err: any) {
         setMotor({ ...motor, status: prevStatus });
         setMotorsList((prev) => prev.map((m) => (m.id === motor.id ? { ...m, status: prevStatus } : m)));
@@ -510,7 +515,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
       );
       audioAlert.testSound('INFO');
       setTimeout(() => setToastMessage(null), 3500);
-      debouncedSync(100);
+      await loadData(false);
     } catch (err: any) {
       setMotor({ ...motor, status: prevStatus });
       setMotorsList((prev) => prev.map((m) => (m.id === motor.id ? { ...m, status: prevStatus } : m)));
@@ -634,11 +639,22 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
     }
   };
 
+  // Refresh events whenever user enters Activity & Audit Log screen
+  useEffect(() => {
+    if (activeServiceScreen === 'LATEST_EVENT') {
+      loadData(false);
+    }
+  }, [activeServiceScreen, loadData]);
+
   // Convert raw events into structured sessions
   const runSessions: PumpRunSession[] = React.useMemo(() => {
-    const sorted = [...recentEvents].sort(
-      (a, b) => new Date(a.occurred_at).getTime() - new Date(b.occurred_at).getTime()
-    );
+    const sorted = [...recentEvents].sort((a, b) => {
+      const timeDiff = new Date(a.occurred_at).getTime() - new Date(b.occurred_at).getTime();
+      if (timeDiff !== 0) return timeDiff;
+      if (a.event_type === 'STARTED' && b.event_type !== 'STARTED') return -1;
+      if (a.event_type !== 'STARTED' && b.event_type === 'STARTED') return 1;
+      return 0;
+    });
 
     const sessions: PumpRunSession[] = [];
     const openStartsByMotor: Record<string, MotorEventResponse> = {};
@@ -650,15 +666,31 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
       const motorName = targetMotor?.name || 'Main Pump';
 
       if (ev.event_type === 'STARTED') {
-        openStartsByMotor[motorId] = ev;
+        const existing = openStartsByMotor[motorId];
+        // If an existing start was already an AUTOMATION / SCHEDULED event, preserve its metadata
+        if (existing && (existing.source === 'AUTOMATION' || existing.event_payload?.schedule_name)) {
+          openStartsByMotor[motorId] = {
+            ...ev,
+            source: existing.source,
+            description: existing.description,
+            event_payload: { ...ev.event_payload, ...existing.event_payload },
+            occurred_at: existing.occurred_at,
+          };
+        } else {
+          openStartsByMotor[motorId] = ev;
+        }
       } else if (ev.event_type === 'STOPPED' || ev.event_type === 'FAULT' || ev.event_type === 'EMERGENCY_STOP') {
         const startEv = openStartsByMotor[motorId];
         const stopTime = ev.occurred_at;
         const startTime = startEv ? startEv.occurred_at : stopTime;
-        const durationSecs = Math.max(
+        let durationSecs = Math.max(
           0,
           Math.round((new Date(stopTime).getTime() - new Date(startTime).getTime()) / 1000)
         );
+
+        if (durationSecs === 0 && ev.event_payload?.runtime_seconds) {
+          durationSecs = Math.max(0, Math.round(Number(ev.event_payload.runtime_seconds)));
+        }
 
         let stopCategory: PumpRunSession['stopReasonCategory'] = 'NORMAL';
         let stopReason = ev.description || 'Routine Cycle Finished';
@@ -682,6 +714,32 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
           stopCategory = 'EMERGENCY_STOP';
         }
 
+        const isSchedSession = Boolean(
+          startEv?.source === 'AUTOMATION' ||
+          ev.source === 'AUTOMATION' ||
+          startEv?.event_payload?.schedule_name ||
+          ev.event_payload?.schedule_name ||
+          startEv?.event_payload?.schedule_id ||
+          ev.event_payload?.schedule_id ||
+          String(startEv?.description || '').toLowerCase().includes('schedule') ||
+          String(ev.description || '').toLowerCase().includes('schedule')
+        );
+
+        const schedName =
+          startEv?.event_payload?.schedule_name ||
+          ev.event_payload?.schedule_name ||
+          (startEv?.description?.startsWith('Schedule: ')
+            ? startEv.description.replace('Schedule: ', '').trim()
+            : ev.description?.startsWith('Schedule Completed: ')
+            ? ev.description.replace('Schedule Completed: ', '').trim()
+            : startEv?.description?.startsWith('Schedule Completed: ')
+            ? startEv.description.replace('Schedule Completed: ', '').trim()
+            : undefined);
+
+        if (schedName && stopCategory === 'SCHEDULE_END' && !stopReason.includes(schedName)) {
+          stopReason = `Schedule Completed: ${schedName}`;
+        }
+
         sessions.unshift({
           id: ev.id,
           motorId,
@@ -690,9 +748,9 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
           startTime,
           stopTime,
           durationSeconds: durationSecs,
-          triggerType: startEv?.source === 'AUTOMATION' ? 'SCHEDULED' : 'MANUAL',
-          scheduleName: startEv?.event_payload?.schedule_name || undefined,
-          description: ev.description || undefined,
+          triggerType: isSchedSession ? 'SCHEDULED' : 'MANUAL',
+          scheduleName: schedName,
+          description: ev.description || startEv?.description || (schedName ? `Schedule: ${schedName}` : undefined),
           isRunning: false,
           status: ev.event_type === 'FAULT' || ev.event_type === 'EMERGENCY_STOP' ? 'TRIPPED' : 'COMPLETED',
           stopReason,
@@ -703,24 +761,102 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
       }
     }
 
-    // Include currently running sessions
-    if (motor && isMotorRunning) {
+    // Include currently running sessions for any active motors
+    const runningMotors = motorsList.length > 0
+      ? motorsList.filter((m) => m.status === 'ON' || m.status === 'STARTING')
+      : (motor && isMotorRunning ? [motor] : []);
+
+    for (const runM of runningMotors) {
+      const isCur = runM.id === motor?.id;
+      const runTimer = isCur ? activeTimer : null;
+      const openStart = openStartsByMotor[runM.id];
+
+      const isSchedRunning = Boolean(
+        runTimer?.schedule_name ||
+        runTimer?.source === 'SCHEDULED' ||
+        openStart?.source === 'AUTOMATION' ||
+        openStart?.event_payload?.schedule_name ||
+        openStart?.event_payload?.schedule_id ||
+        String(openStart?.description || '').toLowerCase().includes('schedule')
+      );
+
+      const schedName =
+        runTimer?.schedule_name ||
+        openStart?.event_payload?.schedule_name ||
+        (openStart?.description?.startsWith('Schedule: ')
+          ? openStart.description.replace('Schedule: ', '').trim()
+          : undefined);
+
+      const startTime = runTimer?.started_at || openStart?.occurred_at || new Date().toISOString();
+      const startMs = new Date(startTime).getTime();
+      const nowMs = Date.now();
+      const elapsedSecs = Math.max(0, Math.round((nowMs - startMs) / 1000));
+
+      const durationSecs = runTimer && runTimer.duration_seconds > 0
+        ? Math.max(0, runTimer.duration_seconds - remainingSeconds)
+        : (openStart ? elapsedSecs : 120);
+
       sessions.unshift({
-        id: 'live-active-session',
-        motorId: motor.id,
-        motorCode: motor.motor_code,
-        motorName: motor.name,
-        startTime: activeTimer?.started_at || new Date().toISOString(),
+        id: `live-active-session-${runM.id}`,
+        motorId: runM.id,
+        motorCode: runM.motor_code,
+        motorName: runM.name,
+        startTime,
         stopTime: null,
-        durationSeconds: activeTimer ? activeTimer.duration_seconds - remainingSeconds : 120,
-        triggerType: activeTimer?.schedule_name ? 'SCHEDULED' : 'MANUAL',
-        scheduleName: activeTimer?.schedule_name || undefined,
-        description: 'Currently running active pumping cycle',
+        durationSeconds: durationSecs,
+        triggerType: isSchedRunning ? 'SCHEDULED' : 'MANUAL',
+        scheduleName: schedName,
+        description: schedName
+          ? `Running on Schedule: ${schedName}`
+          : (openStart?.description || 'Currently running active pumping cycle'),
         isRunning: true,
         status: 'RUNNING',
-        stopReason: 'Active Operation In Progress',
-        stopReasonCategory: 'RUNNING',
+        stopReason: schedName ? `Schedule in Progress: ${schedName}` : 'Active Operation In Progress',
+        stopReasonCategory: isSchedRunning ? 'SCHEDULE_END' : 'RUNNING',
       });
+    }
+
+    // Also include any open starts for motors that may be in transition
+    for (const [mId, openEv] of Object.entries(openStartsByMotor)) {
+      if (!runningMotors.some((rm) => rm.id === mId)) {
+        const targetMotor = motorsList.find((m) => m.id === mId) || motor;
+        const motorCode = targetMotor?.motor_code || 'MTR-1';
+        const motorName = targetMotor?.name || 'Main Pump';
+
+        const isSched = Boolean(
+          openEv.source === 'AUTOMATION' ||
+          openEv.event_payload?.schedule_name ||
+          openEv.event_payload?.schedule_id ||
+          String(openEv.description || '').toLowerCase().includes('schedule')
+        );
+
+        const schedName =
+          openEv.event_payload?.schedule_name ||
+          (openEv.description?.startsWith('Schedule: ')
+            ? openEv.description.replace('Schedule: ', '').trim()
+            : undefined);
+
+        const startMs = new Date(openEv.occurred_at).getTime();
+        const nowMs = Date.now();
+        const elapsedSecs = Math.max(0, Math.round((nowMs - startMs) / 1000));
+
+        sessions.unshift({
+          id: `live-open-session-${openEv.id}`,
+          motorId: mId,
+          motorCode,
+          motorName,
+          startTime: openEv.occurred_at,
+          stopTime: null,
+          durationSeconds: elapsedSecs,
+          triggerType: isSched ? 'SCHEDULED' : 'MANUAL',
+          scheduleName: schedName,
+          description: openEv.description || (schedName ? `Schedule: ${schedName}` : 'Running active cycle'),
+          isRunning: true,
+          status: 'RUNNING',
+          stopReason: schedName ? `Schedule in Progress: ${schedName}` : 'Active Operation In Progress',
+          stopReasonCategory: isSched ? 'SCHEDULE_END' : 'RUNNING',
+        });
+      }
     }
 
     return sessions;
@@ -767,10 +903,10 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
   const isAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'ORGANIZATION_ADMIN';
 
   return (
-    <div className="w-full max-w-lg mx-auto px-3.5 pt-1.5 pb-24 space-y-3.5 font-['Poppins',sans-serif] selection:bg-blue-500 selection:text-white">
+    <div className="w-full max-w-lg mx-auto px-3.5 pt-1.5 pb-dock-clearance space-y-3.5 font-sans selection:bg-blue-500 selection:text-white">
       {/* Toast Alert */}
       {toastMessage && (
-        <div className="fixed top-[calc(4.25rem+env(safe-area-inset-top,0px))] left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-2xl bg-slate-900/95 border border-slate-700 text-white text-xs font-bold flex items-center gap-2 backdrop-blur-md animate-bounce">
+        <div className="fixed top-[calc(4.25rem+env(safe-area-inset-top,0px))] left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-xl bg-slate-900/95 border border-slate-700 text-white text-xs font-semibold flex items-center gap-2 backdrop-blur-md shadow-lg animate-fade-in">
           <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
           <span>{toastMessage}</span>
         </div>
@@ -926,9 +1062,8 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               {/* 1. STATION STATUS CARD */}
               <div className="mobile-card p-3.5 flex items-center justify-between gap-2.5 rounded-2xl bg-white border border-slate-200">
                 <div className="flex items-center gap-3 min-w-0 flex-1">
-                  <span className="relative flex h-3 w-3 flex-shrink-0">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+                  <span className="relative flex h-2.5 w-2.5 flex-shrink-0">
+                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500 ring-2 ring-emerald-500/20"></span>
                   </span>
                   <div className="min-w-0">
                     <h2 className="text-sm font-black text-slate-900 tracking-tight leading-tight truncate">
@@ -962,10 +1097,10 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                   <div className="flex items-center justify-between gap-1 text-[11px] font-black tracking-tight text-slate-700 uppercase">
                     <div className="flex items-center gap-1.5 min-w-0">
                       <Sliders className="w-3.5 h-3.5 text-blue-600 flex-shrink-0" />
-                      <span className="truncate">SELECT ACTIVE MOTOR</span>
+                      <span className="truncate">{t.selectActiveMotor}</span>
                     </div>
                     <span className="px-2 py-0.5 rounded-lg bg-blue-50 border border-blue-200/80 text-[10px] font-bold text-blue-700">
-                      {motorsList.length} Units Online
+                      {motorsList.length} {t.unitsOnline}
                     </span>
                   </div>
 
@@ -1025,7 +1160,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
 
                           <div className="flex items-center justify-between pt-2 mt-1.5 border-t border-slate-100 text-[10px] font-bold">
                             <span className={isSelected ? 'text-blue-600' : 'text-slate-400'}>
-                              {isSelected ? '✓ ACTIVE' : 'SELECT'}
+                              {isSelected ? t.active : t.select}
                             </span>
                             <span className="font-mono text-slate-500">
                               {voltage.toFixed(0)}V &bull; {m.rated_power ?? 1.5}kW
@@ -1050,33 +1185,33 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
 
                   <div className="relative z-10 max-w-[62%] space-y-2">
                     <span className="text-[10px] font-black uppercase tracking-wider text-blue-600 block">
-                      SMART WATER MANAGEMENT
+                      {t.smartWaterManagement}
                     </span>
 
                     <h1 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight leading-tight">
-                      Monitor &amp; Control Your Pump Station
+                      {t.monitorControlHeader}
                     </h1>
 
                     <p className="text-[11px] text-slate-600 font-medium pb-1">
-                      Reliable &bull; Real-time &bull; Efficient
+                      {t.heroSub}
                     </p>
 
                     <div className="space-y-1.5 pt-1 text-[11px] font-bold text-slate-800">
                       <div className="flex items-center gap-2">
                         <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-                        <span className="truncate">System Online</span>
+                        <span className="truncate">{t.systemOnline}</span>
                       </div>
                       <div className="flex items-center gap-2">
                         <Droplet className="w-4 h-4 text-blue-600 flex-shrink-0 fill-current" />
-                        <span className="truncate">All Parameters Normal</span>
+                        <span className="truncate">{t.allParametersNormal}</span>
                       </div>
                       <div className="flex items-center gap-2">
                         <BarChart2 className="w-4 h-4 text-slate-700 flex-shrink-0" />
-                        <span className="truncate">Real-time Monitoring</span>
+                        <span className="truncate">{t.realtimeMonitoring}</span>
                       </div>
                       <div className="flex items-center gap-2">
                         <Shield className="w-4 h-4 text-slate-700 flex-shrink-0" />
-                        <span className="truncate">Safe &amp; Reliable Operation</span>
+                        <span className="truncate">{t.safeReliableOperation}</span>
                       </div>
                     </div>
                   </div>
@@ -1090,15 +1225,15 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                   <div className="p-4 rounded-3xl bg-amber-50 border-2 border-amber-400 space-y-3">
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2 min-w-0">
-                        <span className="p-2 rounded-2xl bg-amber-500 text-white animate-bounce">
-                          <AlertTriangle className="w-5 h-5 stroke-[2.5]" />
+                        <span className="p-2 rounded-xl bg-amber-500 text-white">
+                          <AlertTriangle className="w-4 h-4 stroke-[2.5]" />
                         </span>
                         <div className="min-w-0">
                           <h3 className="text-xs font-black text-amber-900 uppercase tracking-wide truncate">
-                            ⚠️ Motor Will Stop in {remainingSeconds}s
+                            {t.motorWillStopIn} {remainingSeconds}s
                           </h3>
                           <p className="text-[11px] text-amber-800 font-medium truncate">
-                            {activeTimer.schedule_name || 'Scheduled Operation'} is about to finish.
+                            {activeTimer.schedule_name || t.scheduledOperation}
                           </p>
                         </div>
                       </div>
@@ -1115,7 +1250,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                         className="flex-1 py-3 px-3 rounded-2xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-black flex items-center justify-center gap-1.5 transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
                       >
                         <FastForward className="w-4 h-4 stroke-[2.5]" />
-                        <span>{isExtending ? 'EXTENDING...' : 'CONTINUE (+15 MIN)'}</span>
+                        <span>{isExtending ? 'EXTENDING...' : t.extend15m}</span>
                       </button>
 
                       <button
@@ -1125,7 +1260,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                         className="py-3 px-4 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-black flex items-center justify-center gap-1.5 transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
                       >
                         <Square className="w-4 h-4 fill-current" />
-                        <span>STOP NOW</span>
+                        <span>{t.stopNow}</span>
                       </button>
                     </div>
                   </div>
@@ -1134,15 +1269,15 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                   <div className="p-4 rounded-3xl bg-blue-600 text-white border border-blue-500 space-y-3 relative overflow-hidden">
                     <div className="flex items-center justify-between gap-2 relative z-10">
                       <div className="flex items-center gap-2 min-w-0">
-                        <span className="p-2 rounded-2xl bg-blue-700 text-cyan-200">
-                          <Timer className="w-5 h-5 animate-spin" />
+                        <span className="p-2 rounded-xl bg-blue-700 text-cyan-200">
+                          <Timer className="w-4 h-4" />
                         </span>
                         <div className="min-w-0">
                           <div className="text-[10px] font-black uppercase tracking-wider text-blue-200">
-                            PUMP ACTIVE &bull; {motor?.name || 'Main Motor'}
+                            {t.pumpActive} &bull; {motor?.name || 'Main Motor'}
                           </div>
                           <div className="text-xs font-bold text-white/95 truncate">
-                            {activeTimer?.schedule_name || 'Scheduled Operation'}
+                            {activeTimer?.schedule_name || t.scheduledOperation}
                           </div>
                         </div>
                       </div>
@@ -1151,7 +1286,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                         <div className="px-3 py-1.5 rounded-2xl bg-blue-700 border border-blue-400/40 font-mono font-black text-sm text-white">
                           {remainingSeconds > 0
                             ? `${Math.floor(remainingSeconds / 60)}:${String(remainingSeconds % 60).padStart(2, '0')}`
-                            : 'RUNNING'}
+                            : t.dockRunning}
                         </div>
                         {isOperator && activeTimer && (
                           <button
@@ -1171,15 +1306,15 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                     {/* Live Telemetry Mini Grid Inside Timer */}
                     <div className="grid grid-cols-3 gap-2 pt-1 border-t border-blue-500/60 text-center relative z-10">
                       <div className="p-2 rounded-2xl bg-blue-700/60 border border-blue-500/40">
-                        <div className="text-[9px] font-bold text-blue-200 uppercase">Current</div>
+                        <div className="text-[9px] font-bold text-blue-200 uppercase">{t.current}</div>
                         <div className="text-xs font-black font-mono mt-0.5">{currentAmps.toFixed(1)} A</div>
                       </div>
                       <div className="p-2 rounded-2xl bg-blue-700/60 border border-blue-500/40">
-                        <div className="text-[9px] font-bold text-blue-200 uppercase">Voltage</div>
+                        <div className="text-[9px] font-bold text-blue-200 uppercase">{t.voltage}</div>
                         <div className="text-xs font-black font-mono mt-0.5">{voltage.toFixed(0)} V</div>
                       </div>
                       <div className="p-2 rounded-2xl bg-blue-700/60 border border-blue-500/40">
-                        <div className="text-[9px] font-bold text-blue-200 uppercase">Power</div>
+                        <div className="text-[9px] font-bold text-blue-200 uppercase">{t.power}</div>
                         <div className="text-xs font-black font-mono mt-0.5">{powerKw.toFixed(1)} kW</div>
                       </div>
                     </div>
@@ -1224,7 +1359,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                     <MotorIcon className="w-10 h-10 sm:w-12 sm:h-12" />
                   </div>
                   <span className="text-[11px] sm:text-xs font-black text-slate-800 leading-tight text-center mt-1">
-                    Select Active Motor
+                    {t.cardSelectMotor}
                   </span>
                 </button>
 
@@ -1238,7 +1373,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                     <InterlockIcon className="w-10 h-10 sm:w-12 sm:h-12" />
                   </div>
                   <span className="text-[11px] sm:text-xs font-black text-slate-800 leading-tight text-center mt-1">
-                    Interlocks
+                    {t.cardInterlocks}
                   </span>
                 </button>
 
@@ -1252,7 +1387,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                     <TankLevelIcon className="w-10 h-10 sm:w-12 sm:h-12" />
                   </div>
                   <span className="text-[11px] sm:text-xs font-black text-slate-800 leading-tight text-center mt-1">
-                    Tank Level
+                    {t.cardTankLevel}
                   </span>
                 </button>
 
@@ -1266,7 +1401,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                     <SumpLevelIcon className="w-10 h-10 sm:w-12 sm:h-12" />
                   </div>
                   <span className="text-[11px] sm:text-xs font-black text-slate-800 leading-tight text-center mt-1">
-                    Sump Level
+                    {t.cardSumpLevel}
                   </span>
                 </button>
 
@@ -1280,7 +1415,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                     <FlowRateIcon className="w-10 h-10 sm:w-12 sm:h-12" />
                   </div>
                   <span className="text-[11px] sm:text-xs font-black text-slate-800 leading-tight text-center mt-1">
-                    Flow Rate
+                    {t.cardFlowRate}
                   </span>
                 </button>
 
@@ -1294,7 +1429,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                     <WaterQualityIcon className="w-10 h-10 sm:w-12 sm:h-12" />
                   </div>
                   <span className="text-[11px] sm:text-xs font-black text-slate-800 leading-tight text-center mt-1">
-                    Water Quality
+                    {t.cardWaterQuality}
                   </span>
                 </button>
 
@@ -1308,7 +1443,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                     <ElectricalLoadIcon className="w-10 h-10 sm:w-12 sm:h-12" />
                   </div>
                   <span className="text-[11px] sm:text-xs font-black text-slate-800 leading-tight text-center mt-1">
-                    Electrical Load
+                    {t.cardElectricalLoad}
                   </span>
                 </button>
 
@@ -1322,7 +1457,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                     <PumpScheduleIcon className="w-10 h-10 sm:w-12 sm:h-12" />
                   </div>
                   <span className="text-[11px] sm:text-xs font-black text-slate-800 leading-tight text-center mt-1">
-                    Pump Schedules
+                    {t.cardSchedules}
                   </span>
                 </button>
 
@@ -1336,7 +1471,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                     <LatestEventIcon className="w-10 h-10 sm:w-12 sm:h-12" />
                   </div>
                   <span className="text-[11px] sm:text-xs font-black text-slate-800 leading-tight text-center mt-1">
-                    Latest Event
+                    {t.cardLatestEvent}
                   </span>
                 </button>
               </div>
@@ -1762,8 +1897,8 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
 
       {/* Schedule Delete Confirmation Popup */}
       {scheduleToDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in font-['Poppins',sans-serif]">
-          <div className="bg-white w-full max-w-sm rounded-3xl p-5 border border-slate-200 space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in font-sans">
+          <div className="bg-white w-full max-w-sm rounded-2xl p-5 border border-slate-200 space-y-4 shadow-2xl">
             <div className="flex items-center gap-3 text-rose-600">
               <div className="w-10 h-10 rounded-2xl bg-rose-50 flex items-center justify-center shrink-0">
                 <Trash2 className="w-5 h-5" />

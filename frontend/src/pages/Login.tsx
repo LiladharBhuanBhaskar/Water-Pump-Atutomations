@@ -15,7 +15,7 @@ import {
   Wifi,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { isNativeCapacitorApp, DEFAULT_CLOUDFLARE_URL } from '../services/api';
+import { DEFAULT_CLOUDFLARE_URL } from '../services/api';
 
 export const Login: React.FC = () => {
   const { login } = useAuth();
@@ -26,13 +26,22 @@ export const Login: React.FC = () => {
   const [selectedRole, setSelectedRole] = useState<'ADMIN' | 'USER' | null>(null);
 
   // Cloudflare Remote Tunnel & Server Connection (Unified for APK & Web)
-  const isMobile = isNativeCapacitorApp();
   const [serverUrl, setServerUrl] = useState<string>(() => {
-    return (
+    const saved =
       localStorage.getItem('hydra_server_url') ||
       localStorage.getItem('hydra_mobile_server_url') ||
-      (isMobile ? DEFAULT_CLOUDFLARE_URL : '')
-    );
+      localStorage.getItem('hydra_web_custom_server');
+    if (saved && saved.trim()) {
+      const clean = saved.trim().replace(/\/+$/, '');
+      if (clean.includes('trycloudflare.com') && clean !== DEFAULT_CLOUDFLARE_URL) {
+        localStorage.setItem('hydra_server_url', DEFAULT_CLOUDFLARE_URL);
+        localStorage.setItem('hydra_mobile_server_url', DEFAULT_CLOUDFLARE_URL);
+        localStorage.setItem('hydra_web_custom_server', DEFAULT_CLOUDFLARE_URL);
+        return DEFAULT_CLOUDFLARE_URL;
+      }
+      return clean;
+    }
+    return DEFAULT_CLOUDFLARE_URL;
   });
   const [showServerConfig, setShowServerConfig] = useState<boolean>(false);
   const [isTestingServer, setIsTestingServer] = useState<boolean>(false);
@@ -40,22 +49,18 @@ export const Login: React.FC = () => {
   const [serverTestMessage, setServerTestMessage] = useState<string | null>(null);
 
   const handleSaveServerUrl = (url: string) => {
-    setServerUrl(url);
-    if (url.trim()) {
-      const clean = url.trim().replace(/\/+$/, '');
-      localStorage.setItem('hydra_server_url', clean);
-      localStorage.setItem('hydra_mobile_server_url', clean);
-    } else {
-      localStorage.removeItem('hydra_server_url');
-      localStorage.removeItem('hydra_mobile_server_url');
-    }
+    const clean = (url.trim() || DEFAULT_CLOUDFLARE_URL).replace(/\/+$/, '');
+    setServerUrl(clean);
+    localStorage.setItem('hydra_server_url', clean);
+    localStorage.setItem('hydra_mobile_server_url', clean);
+    localStorage.setItem('hydra_web_custom_server', clean);
   };
 
   const handleResetServerUrl = () => {
-    localStorage.removeItem('hydra_server_url');
-    localStorage.removeItem('hydra_mobile_server_url');
-    localStorage.removeItem('hydra_web_custom_server');
-    setServerUrl(isMobile ? DEFAULT_CLOUDFLARE_URL : '');
+    setServerUrl(DEFAULT_CLOUDFLARE_URL);
+    localStorage.setItem('hydra_server_url', DEFAULT_CLOUDFLARE_URL);
+    localStorage.setItem('hydra_mobile_server_url', DEFAULT_CLOUDFLARE_URL);
+    localStorage.setItem('hydra_web_custom_server', DEFAULT_CLOUDFLARE_URL);
     setServerTestStatus('IDLE');
     setServerTestMessage(null);
   };
@@ -64,8 +69,8 @@ export const Login: React.FC = () => {
     setIsTestingServer(true);
     setServerTestStatus('IDLE');
     setServerTestMessage(null);
-    const target = serverUrl.trim().replace(/\/+$/, '');
-    const pingEndpoint = target ? `${target}/health/live` : '/health/live';
+    const target = (serverUrl.trim() || DEFAULT_CLOUDFLARE_URL).replace(/\/+$/, '');
+    const pingEndpoint = `${target}/health/live`;
     try {
       const startTime = Date.now();
       const res = await fetch(pingEndpoint, { method: 'GET' });
@@ -73,19 +78,16 @@ export const Login: React.FC = () => {
       if (res.ok) {
         setServerTestStatus('SUCCESS');
         setServerTestMessage(`✓ Connected successfully! (${latency}ms)`);
-        const storageKey = isMobile ? 'hydra_mobile_server_url' : 'hydra_web_custom_server';
-        if (target) {
-          localStorage.setItem(storageKey, target);
-        } else {
-          localStorage.removeItem(storageKey);
-        }
+        localStorage.setItem('hydra_server_url', target);
+        localStorage.setItem('hydra_mobile_server_url', target);
+        localStorage.setItem('hydra_web_custom_server', target);
       } else {
         setServerTestStatus('FAILED');
         setServerTestMessage(`HTTP ${res.status}: Server returned error.`);
       }
     } catch (err: any) {
       setServerTestStatus('FAILED');
-      setServerTestMessage(`Cannot connect to server. Check server status or Wi-Fi.`);
+      setServerTestMessage(`Cannot connect to ${target}. Check internet/Wi-Fi or tunnel status.`);
     } finally {
       setIsTestingServer(false);
     }
@@ -98,22 +100,17 @@ export const Login: React.FC = () => {
       return;
     }
 
-    if (serverUrl.trim()) {
-      const clean = serverUrl.trim().replace(/\/+$/, '');
-      localStorage.setItem('hydra_server_url', clean);
-      localStorage.setItem('hydra_mobile_server_url', clean);
-    } else {
-      localStorage.removeItem('hydra_server_url');
-      localStorage.removeItem('hydra_mobile_server_url');
-      localStorage.removeItem('hydra_web_custom_server');
-    }
+    const clean = (serverUrl.trim() || DEFAULT_CLOUDFLARE_URL).replace(/\/+$/, '');
+    localStorage.setItem('hydra_server_url', clean);
+    localStorage.setItem('hydra_mobile_server_url', clean);
+    localStorage.setItem('hydra_web_custom_server', clean);
 
     setError(null);
     setLoading(true);
     try {
       await login(email, password);
     } catch (err: any) {
-      setError(err.message || 'Login failed. Please check credentials or Server IP.');
+      setError(err.message || 'Login failed. Please check credentials or Server Host URL.');
     } finally {
       setLoading(false);
     }
@@ -132,7 +129,7 @@ export const Login: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#f8fafc] text-slate-900 flex flex-col justify-center items-center p-4 sm:p-6 pt-[calc(1.25rem+env(safe-area-inset-top,0px))] pb-[calc(1.25rem+env(safe-area-inset-bottom,0px))] font-['Poppins',sans-serif] selection:bg-blue-500 selection:text-white">
+    <div className="min-h-screen bg-[#f8fafc] text-slate-900 flex flex-col justify-center items-center p-4 sm:p-6 pt-[calc(1.25rem+env(safe-area-inset-top,0px))] pb-[calc(1.25rem+env(safe-area-inset-bottom,0px))] font-sans selection:bg-blue-500 selection:text-white">
       <div className="w-full max-w-md space-y-5">
         {/* Branding Header */}
         <div className="text-center space-y-1.5">
@@ -208,9 +205,26 @@ export const Login: React.FC = () => {
         <div className="p-5 sm:p-6 rounded-3xl border border-slate-200 bg-white">
           <form onSubmit={handleSubmit} className="space-y-3.5">
             {error && (
-              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 text-rose-500 flex-shrink-0" />
-                <span>{error}</span>
+              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex flex-col gap-2">
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 text-rose-500 flex-shrink-0 mt-0.5" />
+                  <span className="leading-relaxed">{error}</span>
+                </div>
+                {(error.toLowerCase().includes('resolve host') ||
+                  error.toLowerCase().includes('connect') ||
+                  error.toLowerCase().includes('failed to fetch') ||
+                  error.toLowerCase().includes('no address associated')) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleResetServerUrl();
+                      setError(null);
+                    }}
+                    className="self-start px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold text-[11px] transition-colors cursor-pointer flex items-center gap-1 shadow-xs"
+                  >
+                    <span>⚡ Reset to Live Server URL</span>
+                  </button>
+                )}
               </div>
             )}
 
@@ -271,12 +285,16 @@ export const Login: React.FC = () => {
             >
               <div className="flex items-center gap-1.5">
                 <Wifi className="w-3.5 h-3.5 text-blue-600" />
-                <span className="font-bold">Server Connection (Wi-Fi / Cloud)</span>
+                <span className="font-bold">Server Connection</span>
+                <span className="w-2 h-2 rounded-full bg-emerald-500" title="Active Host Configured" />
               </div>
-              <span className="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-mono font-medium">
-                {showServerConfig ? 'Hide' : 'Configure IP'}
+              <span className="text-[10px] bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-full font-mono font-bold">
+                {showServerConfig ? 'Hide' : 'Change Server'}
               </span>
             </button>
+            <div className="text-[10px] text-slate-400 font-mono truncate px-1">
+              Active Host: <span className="text-slate-600 font-semibold">{serverUrl || DEFAULT_CLOUDFLARE_URL}</span>
+            </div>
 
             {showServerConfig && (
               <div className="mt-2.5 p-3 rounded-2xl bg-slate-50 border border-slate-200 space-y-2.5">

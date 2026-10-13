@@ -270,7 +270,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ latestWsEvent }) => {
 
   if (isLoading) {
     return (
-      <div className="min-h-[70vh] flex flex-col items-center justify-center space-y-4 font-['Poppins',sans-serif]">
+      <div className="min-h-[70vh] flex flex-col items-center justify-center space-y-4 font-sans">
         <Loader2 className="w-10 h-10 animate-spin text-cyan-400" />
         <p className="text-sm font-semibold text-slate-400">Loading Business Administration Suite...</p>
       </div>
@@ -278,7 +278,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ latestWsEvent }) => {
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 font-['Poppins',sans-serif] pb-16">
+    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans pb-16">
       {/* Toast Banner */}
       {toastMessage && (
         <div className="fixed top-20 right-6 z-50 animate-bounce-in">

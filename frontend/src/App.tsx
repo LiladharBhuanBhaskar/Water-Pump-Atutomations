@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { LanguageProvider } from './context/LanguageContext';
 import { Login } from './pages/Login';
 import { Dashboard } from './pages/Dashboard';
 import { HomeDashboard } from './pages/HomeDashboard';
@@ -94,7 +95,7 @@ const MainLayout: React.FC = () => {
           }}
         />
 
-        <main className="flex-1 w-full pb-10">
+        <main className="flex-1 w-full pb-dock-clearance">
           <ErrorBoundary fallbackTitle="Mobile App View Error">
             <HomeDashboard
               latestWsEvent={latestWsEvent}
@@ -139,7 +140,9 @@ const MainLayout: React.FC = () => {
 export default function App() {
   return (
     <AuthProvider>
-      <MainLayout />
+      <LanguageProvider>
+        <MainLayout />
+      </LanguageProvider>
     </AuthProvider>
   );
 }
