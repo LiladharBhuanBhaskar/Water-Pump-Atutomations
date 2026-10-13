@@ -296,6 +296,15 @@ def transition_motor_state(
                 event_type=None,
                 is_valid=True
             )
+        if event == MotorStateEvent.CMD_RESET:
+            return TransitionResult(
+                current_state=current_state,
+                next_state=MotorStatus.OFF,
+                event=event,
+                reason="Motor state reset to OFF.",
+                event_type=MotorEventType.RESET,
+                is_valid=True
+            )
 
     # --- STATE: ON ---
     elif current_state == MotorStatus.ON:
@@ -350,6 +359,25 @@ def transition_motor_state(
 
     # --- STATE: STOPPING ---
     elif current_state == MotorStatus.STOPPING:
+        if event in (MotorStateEvent.CMD_START, MotorStateEvent.STATUS_STARTING):
+            if active_safety_trip or safety_latched:
+                return TransitionResult(
+                    current_state=current_state,
+                    next_state=current_state,
+                    event=event,
+                    reason="Cannot start: Active safety trip or latched safety interlock.",
+                    event_type=None,
+                    is_valid=False,
+                    error_message="Active safety trip or latched safety interlock prevents startup."
+                )
+            return TransitionResult(
+                current_state=current_state,
+                next_state=MotorStatus.STARTING,
+                event=event,
+                reason="Start sequence initiated.",
+                event_type=None,
+                is_valid=True
+            )
         if event == MotorStateEvent.STATUS_OFF:
             return TransitionResult(
                 current_state=current_state,
@@ -359,16 +387,7 @@ def transition_motor_state(
                 event_type=MotorEventType.STOPPED,
                 is_valid=True
             )
-        if event == MotorStateEvent.SHUTDOWN_FAILED:
-            return TransitionResult(
-                current_state=current_state,
-                next_state=MotorStatus.FAULT,
-                event=event,
-                reason=ctx.get("error_message") or "Motor shutdown sequence failed.",
-                event_type=MotorEventType.FAULT,
-                is_valid=True
-            )
-        if event == MotorStateEvent.STATUS_STOPPING:
+        if event in (MotorStateEvent.CMD_STOP, MotorStateEvent.STATUS_STOPPING):
             # Idempotent in-flight stopping
             return TransitionResult(
                 current_state=current_state,
@@ -376,6 +395,24 @@ def transition_motor_state(
                 event=event,
                 reason="Stop sequence in progress.",
                 event_type=None,
+                is_valid=True
+            )
+        if event == MotorStateEvent.CMD_RESET:
+            return TransitionResult(
+                current_state=current_state,
+                next_state=MotorStatus.OFF,
+                event=event,
+                reason="Motor state reset to OFF.",
+                event_type=MotorEventType.RESET,
+                is_valid=True
+            )
+        if event == MotorStateEvent.SHUTDOWN_FAILED:
+            return TransitionResult(
+                current_state=current_state,
+                next_state=MotorStatus.FAULT,
+                event=event,
+                reason=ctx.get("error_message") or "Motor shutdown sequence failed.",
+                event_type=MotorEventType.FAULT,
                 is_valid=True
             )
 
