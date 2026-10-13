@@ -54,7 +54,7 @@ class Settings(BaseSettings):
         return v
 
     # MQTT
-    MQTT_BROKER_HOST: str = "localhost"
+    MQTT_BROKER_HOST: str = "broker.emqx.io"
     MQTT_BROKER_PORT: int = 1883
     MQTT_USERNAME: str = ""
     MQTT_PASSWORD: str = ""
