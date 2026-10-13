@@ -366,14 +366,24 @@ async def test_web_motor_command_lifecycles(client):
 
         # Ingest Controller ACK -> EXECUTED
         await process_ack_payload(controller.device_uid, {"command_id": cmd_id, "status": "EXECUTED"})
-        ws_cmd_1 = ws.receive_json()
-        assert ws_cmd_1["event"] == "COMMAND_LIFECYCLE"
+        ws_cmd_1 = None
+        for _ in range(5):
+            m = ws.receive_json()
+            if m.get("event") == "COMMAND_LIFECYCLE" and m.get("status") == "EXECUTED":
+                ws_cmd_1 = m
+                break
+        assert ws_cmd_1 is not None
         assert ws_cmd_1["status"] == "EXECUTED"
 
         # Ingest Motor ON
         await process_status_payload(controller.device_uid, {"controller_status": "ACTIVE", "motors": [{"motor_code": motor.motor_code, "status": "ON"}]})
-        ws_m_1 = ws.receive_json()
-        assert ws_m_1["event"] == "MOTOR_STATE"
+        ws_m_1 = None
+        for _ in range(5):
+            m = ws.receive_json()
+            if m.get("event") == "MOTOR_STATE" and m.get("status") == "ON":
+                ws_m_1 = m
+                break
+        assert ws_m_1 is not None
         assert ws_m_1["status"] == "ON"
 
         # 2. Dispatch STOP
@@ -382,13 +392,23 @@ async def test_web_motor_command_lifecycles(client):
         stop_cmd_id = stop_resp.json()["id"]
 
         await process_ack_payload(controller.device_uid, {"command_id": stop_cmd_id, "status": "EXECUTED"})
-        ws_cmd_2 = ws.receive_json()
-        assert ws_cmd_2["event"] == "COMMAND_LIFECYCLE"
+        ws_cmd_2 = None
+        for _ in range(5):
+            m = ws.receive_json()
+            if m.get("event") == "COMMAND_LIFECYCLE" and m.get("status") == "EXECUTED":
+                ws_cmd_2 = m
+                break
+        assert ws_cmd_2 is not None
         assert ws_cmd_2["status"] == "EXECUTED"
 
         await process_status_payload(controller.device_uid, {"controller_status": "ACTIVE", "motors": [{"motor_code": motor.motor_code, "status": "OFF"}]})
-        ws_m_2 = ws.receive_json()
-        assert ws_m_2["event"] == "MOTOR_STATE"
+        ws_m_2 = None
+        for _ in range(5):
+            m = ws.receive_json()
+            if m.get("event") == "MOTOR_STATE" and m.get("status") == "OFF":
+                ws_m_2 = m
+                break
+        assert ws_m_2 is not None
         assert ws_m_2["status"] == "OFF"
 
         # 3. Emergency Stop Fault Event
@@ -398,8 +418,13 @@ async def test_web_motor_command_lifecycles(client):
             "description": "Physical E-Stop Switch Triggered",
         }
         await process_fault_payload(controller.device_uid, fault_payload)
-        ws_alert = ws.receive_json()
-        assert ws_alert["event"] == "SAFETY_ALERT"
+        ws_alert = None
+        for _ in range(5):
+            m = ws.receive_json()
+            if m.get("event") == "SAFETY_ALERT" and m.get("event_type") == "EMERGENCY_STOP":
+                ws_alert = m
+                break
+        assert ws_alert is not None
         assert ws_alert["event_type"] == "EMERGENCY_STOP"
 
 

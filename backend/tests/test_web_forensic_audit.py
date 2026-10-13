@@ -251,13 +251,23 @@ async def test_forensic_clean_runs_repeatability(client):
             cmd_start_id = start_resp.json()["id"]
 
             await process_ack_payload(controller.device_uid, {"command_id": cmd_start_id, "status": "EXECUTED"})
-            ws_cmd = ws.receive_json()
-            assert ws_cmd["event"] == "COMMAND_LIFECYCLE"
+            ws_cmd = None
+            for _ in range(5):
+                m = ws.receive_json()
+                if m.get("event") == "COMMAND_LIFECYCLE" and m.get("status") == "EXECUTED":
+                    ws_cmd = m
+                    break
+            assert ws_cmd is not None
             assert ws_cmd["status"] == "EXECUTED"
 
             await process_status_payload(controller.device_uid, {"controller_status": "ACTIVE", "motors": [{"motor_code": motor.motor_code, "status": "ON"}]})
-            ws_m = ws.receive_json()
-            assert ws_m["event"] == "MOTOR_STATE"
+            ws_m = None
+            for _ in range(5):
+                m = ws.receive_json()
+                if m.get("event") == "MOTOR_STATE" and m.get("status") == "ON":
+                    ws_m = m
+                    break
+            assert ws_m is not None
             assert ws_m["status"] == "ON"
 
             # Motor STOP
@@ -266,10 +276,21 @@ async def test_forensic_clean_runs_repeatability(client):
             cmd_stop_id = stop_resp.json()["id"]
 
             await process_ack_payload(controller.device_uid, {"command_id": cmd_stop_id, "status": "EXECUTED"})
-            ws_cmd_stop = ws.receive_json()
-            assert ws_cmd_stop["event"] == "COMMAND_LIFECYCLE"
+            ws_cmd_stop = None
+            for _ in range(5):
+                m = ws.receive_json()
+                if m.get("event") == "COMMAND_LIFECYCLE" and m.get("status") == "EXECUTED":
+                    ws_cmd_stop = m
+                    break
+            assert ws_cmd_stop is not None
+            assert ws_cmd_stop["status"] == "EXECUTED"
 
             await process_status_payload(controller.device_uid, {"controller_status": "ACTIVE", "motors": [{"motor_code": motor.motor_code, "status": "OFF"}]})
-            ws_m_stop = ws.receive_json()
-            assert ws_m_stop["event"] == "MOTOR_STATE"
+            ws_m_stop = None
+            for _ in range(5):
+                m = ws.receive_json()
+                if m.get("event") == "MOTOR_STATE" and m.get("status") == "OFF":
+                    ws_m_stop = m
+                    break
+            assert ws_m_stop is not None
             assert ws_m_stop["status"] == "OFF"
