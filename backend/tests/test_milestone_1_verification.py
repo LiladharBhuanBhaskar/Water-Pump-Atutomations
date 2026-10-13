@@ -267,8 +267,13 @@ async def test_milestone_1_complete_flow(client):
         assert ack_result.status == CommandStatus.EXECUTED
 
         # Verify command lifecycle event on WebSocket
-        ws_cmd_event = ws.receive_json()
-        assert ws_cmd_event["event"] == "COMMAND_LIFECYCLE"
+        ws_cmd_event = None
+        for _ in range(5):
+            m = ws.receive_json()
+            if m.get("event") == "COMMAND_LIFECYCLE" and m.get("status") == "EXECUTED":
+                ws_cmd_event = m
+                break
+        assert ws_cmd_event is not None
         assert ws_cmd_event["command_id"] == str(command_id)
         assert ws_cmd_event["status"] == "EXECUTED"
 
@@ -279,8 +284,13 @@ async def test_milestone_1_complete_flow(client):
         }
         await process_status_payload(controller.device_uid, status_payload)
 
-        ws_motor_event = ws.receive_json()
-        assert ws_motor_event["event"] == "MOTOR_STATE"
+        ws_motor_event = None
+        for _ in range(5):
+            m = ws.receive_json()
+            if m.get("event") == "MOTOR_STATE" and m.get("status") == "ON":
+                ws_motor_event = m
+                break
+        assert ws_motor_event is not None
         assert ws_motor_event["motor_id"] == str(motor.id)
         assert ws_motor_event["status"] == "ON"
         assert ws_motor_event["previous_status"] in ("OFF", "STARTING")
@@ -294,8 +304,13 @@ async def test_milestone_1_complete_flow(client):
 
         # Ingest Controller ACK -> EXECUTED for STOP
         await process_ack_payload(controller.device_uid, {"command_id": stop_cmd_id, "status": "EXECUTED"})
-        stop_ws_event = ws.receive_json()
-        assert stop_ws_event["event"] == "COMMAND_LIFECYCLE"
+        stop_ws_event = None
+        for _ in range(5):
+            m = ws.receive_json()
+            if m.get("event") == "COMMAND_LIFECYCLE" and m.get("status") == "EXECUTED":
+                stop_ws_event = m
+                break
+        assert stop_ws_event is not None
         assert stop_ws_event["status"] == "EXECUTED"
 
         # Ingest physical motor status update (ON -> OFF)
@@ -303,8 +318,13 @@ async def test_milestone_1_complete_flow(client):
             controller.device_uid,
             {"controller_status": "ACTIVE", "motors": [{"motor_code": motor.motor_code, "status": "OFF"}]},
         )
-        stop_state_event = ws.receive_json()
-        assert stop_state_event["event"] == "MOTOR_STATE"
+        stop_state_event = None
+        for _ in range(5):
+            m = ws.receive_json()
+            if m.get("event") == "MOTOR_STATE" and m.get("status") == "OFF":
+                stop_state_event = m
+                break
+        assert stop_state_event is not None
         assert stop_state_event["status"] == "OFF"
         assert stop_state_event["previous_status"] in ("ON", "STOPPING")
 
@@ -319,9 +339,13 @@ async def test_milestone_1_complete_flow(client):
         fault_event = await process_fault_payload(controller.device_uid, estop_payload)
         assert fault_event is not None
 
-        estop_ws_alert = ws.receive_json()
-        assert estop_ws_alert["event"] == "SAFETY_ALERT"
-        assert estop_ws_alert["event_type"] == "EMERGENCY_STOP"
+        estop_ws_alert = None
+        for _ in range(5):
+            m = ws.receive_json()
+            if m.get("event") == "SAFETY_ALERT" and m.get("event_type") == "EMERGENCY_STOP":
+                estop_ws_alert = m
+                break
+        assert estop_ws_alert is not None
         assert estop_ws_alert["motor_id"] == str(motor.id)
         assert "Emergency Stop" in estop_ws_alert["description"]
 

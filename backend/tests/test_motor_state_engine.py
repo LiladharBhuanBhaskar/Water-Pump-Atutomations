@@ -631,3 +631,4 @@ async def test_status_payload_multi_motor_sync():
         assert m1_ref.status == MotorStatus.ON
         assert m2_ref.status == MotorStatus.OFF
 
+
