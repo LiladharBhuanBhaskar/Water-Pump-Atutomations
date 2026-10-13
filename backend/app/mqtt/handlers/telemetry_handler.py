@@ -63,7 +63,35 @@ async def process_telemetry_payload(device_uid: str, payload: Any) -> int:
     and broadcasts updates via WebSocket.
     """
     if isinstance(payload, dict):
-        readings_list = [payload]
+        if "sensors" in payload and isinstance(payload["sensors"], dict):
+            # Nested sensors dictionary from ESP32 C++ firmware
+            s_map = {
+                "water_level_pct": (SensorType.WATER_LEVEL, "%"),
+                "water_level": (SensorType.WATER_LEVEL, "%"),
+                "turbidity_ntu": (SensorType.TURBIDITY, "NTU"),
+                "turbidity": (SensorType.TURBIDITY, "NTU"),
+                "current_amps": (SensorType.CURRENT, "A"),
+                "current": (SensorType.CURRENT, "A"),
+                "flow_rate": (SensorType.FLOW, "L/min"),
+                "flow": (SensorType.FLOW, "L/min"),
+                "voltage": (SensorType.VOLTAGE, "V"),
+                "pressure": (SensorType.PRESSURE, "bar"),
+            }
+            readings_list = []
+            now_iso = datetime.now(timezone.utc).isoformat()
+            for key, val in payload["sensors"].items():
+                if key in s_map and isinstance(val, (int, float)):
+                    stype, unit = s_map[key]
+                    readings_list.append({
+                        "sensor_type": stype,
+                        "value": val,
+                        "unit": unit,
+                        "occurred_at": now_iso
+                    })
+        elif "readings" in payload and isinstance(payload["readings"], list):
+            readings_list = [item for item in payload["readings"] if isinstance(item, dict)]
+        else:
+            readings_list = [payload]
     elif isinstance(payload, list):
         readings_list = [item for item in payload if isinstance(item, dict)]
     else:
@@ -105,6 +133,7 @@ async def process_telemetry_payload(device_uid: str, payload: Any) -> int:
 
         # Build lookup table of registered sensors on this physical controller
         sensors_by_code: Dict[str, Sensor] = {s.sensor_code.upper(): s for s in controller.sensors}
+        sensors_by_type: Dict[SensorType, Sensor] = {s.sensor_type: s for s in controller.sensors}
 
         now = datetime.now(timezone.utc)
         controller.last_seen_at = now
@@ -117,12 +146,13 @@ async def process_telemetry_payload(device_uid: str, payload: Any) -> int:
 
         for item in readings_list:
             sensor_code = str(item.get("sensor_code", "")).strip().upper()
-            if not sensor_code:
-                continue
+            sensor = sensors_by_code.get(sensor_code) if sensor_code else None
+            if sensor is None and "sensor_type" in item:
+                sensor = sensors_by_type.get(item["sensor_type"])
 
-            sensor = sensors_by_code.get(sensor_code)
             if sensor is None:
-                logger.warning(f"Rejected telemetry: Unauthorized/unregistered sensor '{sensor_code}' on controller '{device_uid}'")
+                if sensor_code:
+                    logger.warning(f"Rejected telemetry: Unauthorized/unregistered sensor '{sensor_code}' on controller '{device_uid}'")
                 continue
 
             if sensor.status == SensorStatus.DISABLED:
@@ -176,7 +206,7 @@ async def process_telemetry_payload(device_uid: str, payload: Any) -> int:
 
         if saved_count > 0:
             await session.commit()
-            logger.info(f"Persisted {saved_count} telemetry readings for controller '{device_uid}'")
+            logger.debug(f"Persisted {saved_count} telemetry readings for controller '{device_uid}'")
 
             # 1. Real-time WebSocket broadcasting for telemetry
             for p in persisted_items:
