@@ -101,7 +101,7 @@ class Site(BaseModel):
     audit_logs: Mapped[list["AuditLog"]] = relationship(
         "AuditLog",
         back_populates="site",
-        lazy="selectin"
+        lazy="select"
     )
 
     def __repr__(self) -> str:

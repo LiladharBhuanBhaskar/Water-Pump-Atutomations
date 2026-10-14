@@ -55,17 +55,17 @@ class Organization(BaseModel):
     users: Mapped[List["User"]] = relationship(
         "User",
         back_populates="organization",
-        lazy="selectin"
+        lazy="select"
     )
     sites: Mapped[List["Site"]] = relationship(
         "Site",
         back_populates="organization",
-        lazy="selectin"
+        lazy="select"
     )
     audit_logs: Mapped[list["AuditLog"]] = relationship(
         "AuditLog",
         back_populates="organization",
-        lazy="selectin"
+        lazy="select"
     )
 
     def __repr__(self) -> str:
