@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field, ConfigDict
 class StationSettingsUpdate(BaseModel):
     timezone: Optional[str] = Field(default=None, max_length=64)
     auto_stop_on_tank_full: Optional[bool] = None
+    auto_stop_on_turbidity: Optional[bool] = None
     water_level_threshold: Optional[float] = None
     turbidity_threshold: Optional[float] = None
     default_timer_seconds: Optional[int] = None
@@ -21,6 +22,7 @@ class StationSettingsResponse(BaseModel):
     station_id: uuid.UUID
     timezone: str
     auto_stop_on_tank_full: bool
+    auto_stop_on_turbidity: bool = True
     water_level_threshold: Optional[float] = None
     turbidity_threshold: Optional[float] = None
     default_timer_seconds: Optional[int] = None
