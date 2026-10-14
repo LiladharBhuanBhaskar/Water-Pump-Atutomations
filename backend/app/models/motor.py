@@ -98,17 +98,17 @@ class Motor(BaseModel):
     commands: Mapped[list["MotorCommand"]] = relationship(
         "MotorCommand",
         back_populates="motor",
-        lazy="selectin"
+        lazy="select"
     )
     events: Mapped[list["MotorEvent"]] = relationship(
         "MotorEvent",
         back_populates="motor",
-        lazy="selectin"
+        lazy="select"
     )
     automation_rules: Mapped[list["AutomationRule"]] = relationship(
         "AutomationRule",
         back_populates="motor",
-        lazy="selectin"
+        lazy="select"
     )
 
     def __repr__(self) -> str:

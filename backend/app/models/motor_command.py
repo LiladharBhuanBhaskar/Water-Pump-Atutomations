@@ -103,7 +103,7 @@ class MotorCommand(BaseModel):
     requester: Mapped[Optional["User"]] = relationship(
         "User",
         back_populates="motor_commands",
-        lazy="selectin"
+        lazy="select"
     )
 
     def __repr__(self) -> str:
