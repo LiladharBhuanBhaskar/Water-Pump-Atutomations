@@ -57,6 +57,7 @@ def client():
 
 def setup_web_test_hierarchy(prefix: str):
     """Creates an isolated enterprise tenant hierarchy for web matrix testing."""
+    prefix = f"{prefix}_{uuid.uuid4().hex[:6]}"
     with get_sync_session() as session:
         org = Organization(
             id=uuid.uuid4(),
@@ -314,7 +315,9 @@ async def test_web_live_telemetry_streaming(client):
     with client.websocket_connect(f"/api/v1/ws?token={token}") as ws:
         ws.receive_json()  # CONNECTED
         ws.send_json({"action": "SUBSCRIBE", "channels": [f"device:{controller.device_uid}"]})
-        ws.receive_json()  # SUBSCRIBED
+        sub_resp = ws.receive_json()  # SUBSCRIBED
+        assert sub_resp["type"] == "SUBSCRIBED"
+        assert f"device:{controller.device_uid}" in sub_resp["channels"], f"Subscription failed: {sub_resp.get('failed')}"
 
         telemetry_samples = [
             (SensorType.WATER_LEVEL, 84.5, "PERCENT"),

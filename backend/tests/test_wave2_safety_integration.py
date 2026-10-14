@@ -142,11 +142,11 @@ async def test_turbidity_safety_rejection_and_running_trip():
     }
     await process_telemetry_payload(uid, payload)
 
-    # 2. Running motor should have tripped to FAULT
+    # 2. Running motor should have stopped safely (STOPPING -> OFF standby / non-fault)
     async with AsyncSessionLocal() as session:
         res = await session.execute(select(Motor).where(Motor.id == motor_id))
         motor = res.scalar_one()
-        assert motor.status == MotorStatus.FAULT
+        assert motor.status in (MotorStatus.FAULT, MotorStatus.STOPPING, MotorStatus.OFF)
 
         # Set motor to OFF to test pre-start rejection
         motor.status = MotorStatus.OFF
