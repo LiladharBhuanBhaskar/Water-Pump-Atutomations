@@ -38,7 +38,7 @@ import {
 
 export const DEFAULT_CLOUDFLARE_URL =
   (((import.meta as any).env?.VITE_API_BASE_URL as string) || '').trim() ||
-  'https://ebony-beads-earn-recorders.trycloudflare.com';
+  'https://conceptual-opens-path-devices.trycloudflare.com';
 
 export function isNativeCapacitorApp(): boolean {
   if (typeof window === 'undefined') return false;
@@ -91,21 +91,13 @@ export function getServerBaseUrl(): string {
     return cleanSaved;
   }
 
-  // 2. Running inside APK or mobile container: ALWAYS connect to Cloudflare remote
-  if (isNativeCapacitorApp()) {
-    return DEFAULT_CLOUDFLARE_URL;
+  // 2. Environment variable if defined
+  const envUrl = (import.meta as any).env?.VITE_API_BASE_URL;
+  if (envUrl && envUrl.trim()) {
+    return envUrl.trim().replace(/\/+$/, '');
   }
 
-  // 3. In production bundle: ALWAYS default to Cloudflare remote
-  if ((import.meta as any).env?.PROD && DEFAULT_CLOUDFLARE_URL) {
-    return DEFAULT_CLOUDFLARE_URL;
-  }
-
-  // 4. Only in Vite dev mode on localhost:5173 with Vite proxy enabled: use relative path
-  if (typeof window !== 'undefined' && window.location.port === '5173') {
-    return '';
-  }
-
+  // 3. Default to active Cloudflare remote tunnel
   return DEFAULT_CLOUDFLARE_URL;
 }
 
@@ -280,8 +272,11 @@ class ApiService {
   }
 
   // Motor Endpoints
-  async getMotors(controllerId?: string): Promise<Motor[]> {
-    const qs = controllerId ? `?controller_id=${controllerId}` : '';
+  async getMotors(controllerId?: string, stationId?: string): Promise<Motor[]> {
+    const params = new URLSearchParams();
+    if (controllerId) params.append('controller_id', controllerId);
+    if (stationId) params.append('station_id', stationId);
+    const qs = params.toString() ? `?${params.toString()}` : '';
     return this.request<Motor[]>(`/motors${qs}`);
   }
 
@@ -358,7 +353,11 @@ class ApiService {
   }
 
   async getSensorLatest(sensorId: string): Promise<any> {
-    return this.request<any>(`/sensors/${sensorId}/latest`);
+    try {
+      return await this.request<any>(`/sensors/${sensorId}/latest`);
+    } catch {
+      return null;
+    }
   }
 
   // Phase 17: Schedule Endpoints

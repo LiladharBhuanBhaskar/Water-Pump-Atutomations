@@ -21,10 +21,33 @@ class WebSocketService {
   private stateListeners: Set<ConnectionStateListener> = new Set();
   private statusListeners: Set<StatusListener> = new Set();
   private reconnectAttempts = 0;
-  private maxReconnectDelay = 15000;
   private reconnectTimeoutId: any = null;
   private pingIntervalId: any = null;
   private isExplicitlyClosed = false;
+
+  constructor() {
+    if (typeof window !== 'undefined') {
+      window.addEventListener('online', () => {
+        if (!this.isExplicitlyClosed && this.token) {
+          this.reconnectImmediate();
+        }
+      });
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible' && !this.isExplicitlyClosed && this.token && !this.isConnected()) {
+          this.reconnectImmediate();
+        }
+      });
+    }
+  }
+
+  public reconnectImmediate() {
+    if (this.reconnectTimeoutId) {
+      clearTimeout(this.reconnectTimeoutId);
+      this.reconnectTimeoutId = null;
+    }
+    this.reconnectAttempts = 0;
+    this.initializeSocket();
+  }
 
   public isConnected(): boolean {
     return this.socket?.readyState === WebSocket.OPEN;
@@ -37,6 +60,11 @@ class WebSocketService {
 
     this.token = token;
     this.isExplicitlyClosed = false;
+    if (this.reconnectTimeoutId) {
+      clearTimeout(this.reconnectTimeoutId);
+      this.reconnectTimeoutId = null;
+    }
+    this.reconnectAttempts = 0;
     this.initializeSocket();
   }
 
@@ -44,7 +72,11 @@ class WebSocketService {
     if (!this.token) return;
 
     if (this.socket) {
-      this.socket.close();
+      try {
+        this.socket.onclose = null;
+        this.socket.onerror = null;
+        this.socket.close();
+      } catch {}
       this.socket = null;
     }
 
@@ -59,9 +91,14 @@ class WebSocketService {
         wsUrl = `ws://${serverUrl.replace(/^https?:\/\//, '')}/api/v1/ws?token=${encodeURIComponent(this.token)}`;
       }
     } else {
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const host = window.location.host;
-      wsUrl = `${protocol}//${host}/api/v1/ws?token=${encodeURIComponent(this.token)}`;
+      // In local development browser, connect directly to backend on 127.0.0.1:8000 for zero-latency streaming
+      if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+        wsUrl = `ws://127.0.0.1:8000/api/v1/ws?token=${encodeURIComponent(this.token)}`;
+      } else {
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const host = window.location.host;
+        wsUrl = `${protocol}//${host}/api/v1/ws?token=${encodeURIComponent(this.token)}`;
+      }
     }
 
     try {
@@ -117,9 +154,10 @@ class WebSocketService {
   private scheduleReconnect() {
     if (this.reconnectTimeoutId || this.isExplicitlyClosed) return;
 
+    // Fast initial retry: 300ms, 450ms, 675ms... capped at 3000ms
     const delay = Math.min(
-      1000 * Math.pow(1.5, this.reconnectAttempts),
-      this.maxReconnectDelay
+      300 * Math.pow(1.5, Math.min(this.reconnectAttempts, 6)),
+      3000
     );
     this.reconnectAttempts++;
 
