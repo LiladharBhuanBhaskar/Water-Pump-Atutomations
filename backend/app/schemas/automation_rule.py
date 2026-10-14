@@ -2,7 +2,7 @@
 
 import uuid
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Any
 from pydantic import BaseModel, Field, ConfigDict, field_validator
 from app.models.automation_rule import (
     AutomationRuleType,
@@ -34,6 +34,34 @@ class AutomationRuleCreate(BaseModel):
         if not v_stripped:
             raise ValueError("Rule name cannot be blank.")
         return v_stripped
+
+    @field_validator("rule_type", mode="before")
+    @classmethod
+    def validate_rule_type(cls, v: Any) -> Any:
+        if isinstance(v, str):
+            v_upper = v.upper()
+            if "TANK" in v_upper or "LEVEL" in v_upper:
+                return AutomationRuleType.WATER_LEVEL
+            elif "TURBIDITY" in v_upper:
+                return AutomationRuleType.TURBIDITY
+            elif "TIMER" in v_upper or "SCHEDULE" in v_upper:
+                return AutomationRuleType.TIMER
+        return v
+
+    @field_validator("action", mode="before")
+    @classmethod
+    def validate_action(cls, v: Any) -> Any:
+        if isinstance(v, str):
+            v_upper = v.upper()
+            if v_upper in ("STOP", "STOP_MOTOR"):
+                return AutomationAction.STOP_MOTOR
+            elif v_upper in ("START", "START_MOTOR"):
+                return AutomationAction.START_MOTOR
+            elif v_upper in ("RESET", "RESET_MOTOR"):
+                return AutomationAction.RESET_MOTOR
+            elif v_upper in ("LOCKOUT", "EMERGENCY_STOP", "EMERGENCY_STOP_MOTOR"):
+                return AutomationAction.EMERGENCY_STOP_MOTOR
+        return v
 
 
 class AutomationRuleUpdate(BaseModel):
