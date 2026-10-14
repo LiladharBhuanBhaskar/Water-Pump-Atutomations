@@ -25,6 +25,9 @@ async_engine_kwargs = {"echo": False}
 sync_engine_kwargs = {"echo": False}
 
 if is_sqlite:
+    from sqlalchemy.pool import NullPool
+    async_engine_kwargs["poolclass"] = NullPool
+    sync_engine_kwargs["poolclass"] = NullPool
     async_engine_kwargs["connect_args"] = {"check_same_thread": False, "timeout": 30}
     sync_engine_kwargs["connect_args"] = {"check_same_thread": False, "timeout": 30}
 else:
@@ -64,17 +67,44 @@ SyncSessionLocal = sessionmaker(
     expire_on_commit=False
 )
 
+# 2.1 SQLite High-Concurrency & Zero-Lock Optimization (WAL Mode + Memory Cache)
+if is_sqlite:
+    from sqlalchemy import event
+
+    @event.listens_for(async_engine.sync_engine, "connect")
+    def _set_async_sqlite_pragma(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.execute("PRAGMA busy_timeout=5000")
+        cursor.execute("PRAGMA cache_size=-64000")
+        cursor.execute("PRAGMA temp_store=MEMORY")
+        cursor.execute("PRAGMA mmap_size=268435456")
+        cursor.close()
+
+    @event.listens_for(sync_engine, "connect")
+    def _set_sync_sqlite_pragma(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.execute("PRAGMA busy_timeout=5000")
+        cursor.execute("PRAGMA cache_size=-64000")
+        cursor.execute("PRAGMA temp_store=MEMORY")
+        cursor.execute("PRAGMA mmap_size=268435456")
+        cursor.close()
+
 
 # 3. FastAPI Async Database Dependency
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """
     FastAPI dependency that provides an isolated async database session per request.
-    Handles automatic commit on success and rollback on exceptions.
+    Handles automatic commit on success (only if modified) and rollback on exceptions.
     """
     async with AsyncSessionLocal() as session:
         try:
             yield session
-            await session.commit()
+            if session.dirty or session.new or session.deleted:
+                await session.commit()
         except Exception:
             await session.rollback()
             raise
@@ -89,7 +119,8 @@ async def get_async_session() -> AsyncGenerator[AsyncSession, None]:
     async with AsyncSessionLocal() as session:
         try:
             yield session
-            await session.commit()
+            if session.dirty or session.new or session.deleted:
+                await session.commit()
         except Exception:
             await session.rollback()
             raise
