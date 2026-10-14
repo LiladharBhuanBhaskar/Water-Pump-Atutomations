@@ -279,6 +279,7 @@ export interface TankSafetyEvaluation {
 export interface StationSettingsUpdate {
   timezone?: string | null;
   auto_stop_on_tank_full?: boolean | null;
+  auto_stop_on_turbidity?: boolean | null;
   water_level_threshold?: number | null;
   turbidity_threshold?: number | null;
   default_timer_seconds?: number | null;
@@ -291,6 +292,7 @@ export interface StationSettingsResponse {
   station_id: string;
   timezone: string;
   auto_stop_on_tank_full: boolean;
+  auto_stop_on_turbidity?: boolean;
   water_level_threshold?: number | null;
   turbidity_threshold?: number | null;
   default_timer_seconds?: number | null;
