@@ -5,11 +5,11 @@
 
 // Device Identification
 #define DEVICE_UID "HYDRA-PROD-ESP32-001"
-#define FIRMWARE_VERSION "1.0.0-prod"
+#define FIRMWARE_VERSION "1.1.0-circuit"
 
 // Wi-Fi Configuration
-#define WIFI_SSID "HydraNet_Secure"
-#define WIFI_PASSWORD "HydraSecretKey"
+#define WIFI_SSID "Your_WiFi_Name"
+#define WIFI_PASSWORD "Your_WiFi_Password"
 
 // Remote MQTT Configuration (Cloud / Public Broker for Remote Internet Access)
 #define MQTT_BROKER "broker.emqx.io"
@@ -25,14 +25,17 @@
 #define TOPIC_STATUS    "hydracontrol/devices/" DEVICE_UID "/status"
 #define TOPIC_FAULT     "hydracontrol/devices/" DEVICE_UID "/fault"
 
-// Hardware Pinout Mapping
-#define PIN_RELAY_MOTOR_START  25  // Drives Contactor Coil Relay
-#define PIN_EMERGENCY_STOP_BTN 34  // Active-low Emergency STOP interrupt
-#define PIN_FLOAT_HIGH         35  // Upper Tank High Float Switch
-#define PIN_FLOAT_LOW          32  // Lower Tank Dry Run Float Switch
-#define PIN_CURRENT_SENSOR     36  // Analog Current Sensor (ACS712 / CT)
-#define PIN_TURBIDITY_SENSOR   39  // Analog Turbidity Sensor
-#define PIN_WATER_LEVEL_ADC    33  // Hydrostatic / Ultrasonic Level Sensor
+// Hardware Pinout Mapping (Matches Exact Breadboard Circuit Diagram)
+#define PIN_TRIG               18  // HC-SR04 Ultrasonic Trigger (Blue wire)
+#define PIN_ECHO               19  // HC-SR04 Ultrasonic Echo via 10k/15k divider (Yellow wire)
+#define PIN_TURBIDITY_SENSOR   34  // Turbidity Sensor AO via 10k/10k divider (Purple wire - ADC1_CH6)
+#define PIN_BUZZER             25  // 3-Pin Buzzer Module Control (Green wire to S pin)
+#define PIN_ONBOARD_LED        2   // Blue Status LED on ESP32 DevKit
+#define PIN_RELAY_MOTOR_START  26  // Drives Contactor Coil Relay (Active HIGH)
+
+// Tank & Sensor Calibration Parameters
+#define TANK_HEIGHT_CM         100.0f  // Total height of tank in cm
+#define SENSOR_MIN_DISTANCE_CM 5.0f    // Minimum blind zone distance in cm
 
 // Safety Limits
 #define MAX_RUNTIME_MS        (30 * 60 * 1000) // 30 Minutes Max Safe Continuous Run

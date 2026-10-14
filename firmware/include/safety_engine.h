@@ -12,11 +12,13 @@ enum MotorState {
 };
 
 struct SensorReadings {
+    float distance_cm;
     float water_level_pct;
     float turbidity_ntu;
+    float turbidity_volts;
     float current_amps;
-    bool float_high_triggered;
-    bool float_low_triggered;
+    bool overflow_alert;
+    bool dry_run_alert;
 };
 
 class SafetyEngine {
