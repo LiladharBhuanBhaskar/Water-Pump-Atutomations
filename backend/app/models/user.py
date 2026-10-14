@@ -86,17 +86,17 @@ class User(BaseModel):
     motor_commands: Mapped[list["MotorCommand"]] = relationship(
         "MotorCommand",
         back_populates="requester",
-        lazy="selectin"
+        lazy="select"
     )
     created_automation_rules: Mapped[list["AutomationRule"]] = relationship(
         "AutomationRule",
         back_populates="creator",
-        lazy="selectin"
+        lazy="select"
     )
     audit_logs: Mapped[list["AuditLog"]] = relationship(
         "AuditLog",
         back_populates="actor_user",
-        lazy="selectin"
+        lazy="select"
     )
 
     def __repr__(self) -> str:
