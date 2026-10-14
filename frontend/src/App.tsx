@@ -52,11 +52,6 @@ const MainLayout: React.FC = () => {
         setLatestWsEvent(event);
       });
 
-      // Subscribe to user's organization channel by default
-      if (user?.organization_id) {
-        ws.subscribeChannels([`org:${user.organization_id}`]);
-      }
-
       return () => {
         unbindState();
         unbindStatus();
@@ -66,7 +61,14 @@ const MainLayout: React.FC = () => {
     } else {
       ws.disconnect();
     }
-  }, [isAuthenticated, token, user?.organization_id]);
+  }, [isAuthenticated, token]);
+
+  // Subscribe to organization channel dynamically without recycling the socket connection
+  useEffect(() => {
+    if (isAuthenticated && user?.organization_id) {
+      ws.subscribeChannels([`org:${user.organization_id}`]);
+    }
+  }, [isAuthenticated, user?.organization_id]);
 
   if (isLoading && token) {
     return (

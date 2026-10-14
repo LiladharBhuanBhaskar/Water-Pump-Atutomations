@@ -18,10 +18,7 @@ export const WsConnectionBanner: React.FC<WsConnectionBannerProps> = ({
   }
 
   const handleManualReconnect = () => {
-    const token = localStorage.getItem('hydra_token');
-    if (token) {
-      ws.connect(token);
-    }
+    ws.reconnectImmediate();
   };
 
   return (
