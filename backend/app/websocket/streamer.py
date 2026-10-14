@@ -64,6 +64,23 @@ async def stream_telemetry(
         return 0
 
     iso_ts = occurred_at.isoformat() if hasattr(occurred_at, "isoformat") else str(occurred_at)
+    
+    extra_fields = {}
+    code_upper = (sensor_code or "").upper()
+    if "LEVEL" in code_upper or "TANK" in code_upper:
+        if "SUMP" in code_upper or "SOURCE" in code_upper:
+            extra_fields["sump_level"] = value
+        else:
+            extra_fields["tank_level"] = value
+    elif "TURB" in code_upper:
+        extra_fields["turbidity_ntu"] = value
+    elif "CURR" in code_upper:
+        extra_fields["current_a"] = value
+    elif "VOLT" in code_upper:
+        extra_fields["voltage_v"] = value
+    elif "FLOW" in code_upper:
+        extra_fields["flow_rate_lpm"] = value
+
     payload = {
         "event": "TELEMETRY",
         "device_uid": device_uid,
@@ -75,10 +92,13 @@ async def stream_telemetry(
         "value": value,
         "unit": unit,
         "occurred_at": iso_ts,
-        "metadata": metadata or {}
+        "metadata": metadata or {},
+        **extra_fields
     }
 
-    return await hub.broadcast_to_channels(channels, payload)
+    if channels:
+        return await hub.broadcast_to_channels(channels, payload)
+    return await hub.broadcast_to_all(payload)
 
 
 async def stream_motor_state(
@@ -124,10 +144,7 @@ async def stream_motor_state(
     }
 
     if channels:
-        delivered = await hub.broadcast_to_channels(channels, payload)
-        if delivered == 0:
-            return await hub.broadcast_to_all(payload)
-        return delivered
+        return await hub.broadcast_to_channels(channels, payload)
     return await hub.broadcast_to_all(payload)
 
 
@@ -173,10 +190,7 @@ async def stream_command_lifecycle(
     }
 
     if channels:
-        delivered = await hub.broadcast_to_channels(channels, payload)
-        if delivered == 0:
-            return await hub.broadcast_to_all(payload)
-        return delivered
+        return await hub.broadcast_to_channels(channels, payload)
     return await hub.broadcast_to_all(payload)
 
 
@@ -222,10 +236,7 @@ async def stream_safety_alert(
     }
 
     if channels:
-        delivered = await hub.broadcast_to_channels(channels, msg)
-        if delivered == 0:
-            return await hub.broadcast_to_all(msg)
-        return delivered
+        return await hub.broadcast_to_channels(channels, msg)
     return await hub.broadcast_to_all(msg)
 
 
