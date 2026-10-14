@@ -55,6 +55,7 @@ db_session.AsyncSessionLocal = async_sessionmaker(
 @pytest.fixture(scope="session", autouse=True)
 def setup_test_database():
     """Create test database schema before tests and remove test database afterwards."""
+    Base.metadata.drop_all(bind=test_sync_engine)
     Base.metadata.create_all(bind=test_sync_engine)
     yield
     test_sync_engine.dispose()

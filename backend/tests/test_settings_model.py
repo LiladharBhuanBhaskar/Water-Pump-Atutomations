@@ -246,7 +246,7 @@ async def test_settings_async_crud():
         
         settings = StationSettings(station_id=stn.id)
         session.add(settings)
-        await session.flush()
+        await session.commit()
         settings_id = settings.id
 
     async with get_async_session() as session:
