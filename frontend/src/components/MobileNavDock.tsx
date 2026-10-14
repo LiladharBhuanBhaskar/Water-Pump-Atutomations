@@ -1,5 +1,5 @@
 import React from 'react';
-import { Home, Calendar, Power, BarChart2, Settings, Loader2 } from 'lucide-react';
+import { Home, Calendar, Power, BarChart2, Settings, Loader2, RotateCcw } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
 
 export type MobileTab = 'HOME' | 'SCHEDULES' | 'HISTORY' | 'SETTINGS';
@@ -10,6 +10,7 @@ interface MobileNavDockProps {
   isMotorRunning: boolean;
   isProcessing: boolean;
   onPowerToggle: () => void;
+  motorStatus?: string;
 }
 
 export const MobileNavDock: React.FC<MobileNavDockProps> = ({
@@ -18,8 +19,10 @@ export const MobileNavDock: React.FC<MobileNavDockProps> = ({
   isMotorRunning,
   isProcessing,
   onPowerToggle,
+  motorStatus,
 }) => {
   const { t } = useLanguage();
+  const isFault = motorStatus === 'FAULT';
 
   return (
     <div className="fixed bottom-0 left-0 right-0 z-50 flex justify-center pointer-events-none pb-[max(0.5rem,env(safe-area-inset-bottom,0px))] px-3">
@@ -70,27 +73,33 @@ export const MobileNavDock: React.FC<MobileNavDockProps> = ({
             type="button"
             onClick={onPowerToggle}
             disabled={isProcessing}
-            title={isMotorRunning ? t.dockStop : t.dockStart}
+            title={isFault ? 'Clear Fault & Reset' : isMotorRunning ? t.dockStop : t.dockStart}
             className={`w-14 h-14 rounded-full flex items-center justify-center text-white relative shadow-md transition-all cursor-pointer active:scale-90 ${
-              isMotorRunning
+              isFault
+                ? 'bg-rose-600 hover:bg-rose-700 ring-4 ring-rose-200 animate-pulse'
+                : isMotorRunning
                 ? 'floating-power-btn-running ring-4 ring-rose-100'
                 : 'floating-power-btn ring-4 ring-blue-100'
             }`}
           >
             {isProcessing ? (
               <Loader2 className="w-6 h-6 animate-spin text-white" />
+            ) : isFault ? (
+              <RotateCcw className="w-6 h-6 stroke-[2.5]" />
             ) : (
               <Power className="w-6 h-6 stroke-[2.5]" />
             )}
           </button>
           <span
             className={`text-[9px] font-black uppercase tracking-wider mt-1 px-1.5 py-0.2 rounded-full ${
-              isMotorRunning
+              isFault
+                ? 'bg-rose-100 text-rose-700 font-black'
+                : isMotorRunning
                 ? 'bg-rose-100 text-rose-700'
                 : 'bg-slate-100 text-slate-600'
             }`}
           >
-            {isMotorRunning ? t.dockRunning : t.dockPump}
+            {isFault ? 'RESET' : isMotorRunning ? t.dockRunning : t.dockPump}
           </span>
         </div>
 

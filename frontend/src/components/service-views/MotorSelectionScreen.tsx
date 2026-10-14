@@ -7,6 +7,7 @@ import {
   RefreshCw,
   Play,
   Square,
+  RotateCcw,
 } from 'lucide-react';
 import { Motor } from '../../types';
 import { useLanguage } from '../../context/LanguageContext';
@@ -18,6 +19,7 @@ interface MotorSelectionScreenProps {
   onSelectMotor: (motor: Motor) => void;
   isProcessing: boolean;
   onPowerToggle: () => void;
+  onResetMotor?: (motorId?: string) => void;
   onOpenStartModal: () => void;
   currentAmps: number;
   voltage: number;
@@ -33,6 +35,7 @@ export const MotorSelectionScreen: React.FC<MotorSelectionScreenProps> = ({
   onSelectMotor,
   isProcessing,
   onPowerToggle,
+  onResetMotor,
   onOpenStartModal,
   currentAmps,
   voltage,
@@ -42,6 +45,7 @@ export const MotorSelectionScreen: React.FC<MotorSelectionScreenProps> = ({
 }) => {
   const { t, language } = useLanguage();
   const isRunning = activeMotor?.status === 'ON' || activeMotor?.status === 'STARTING';
+  const isFault = activeMotor?.status === 'FAULT';
 
   return (
     <div className="space-y-4 animate-fade-in font-sans pb-dock-clearance">
@@ -154,9 +158,27 @@ export const MotorSelectionScreen: React.FC<MotorSelectionScreenProps> = ({
             </div>
           </div>
 
-          {/* Start / Stop Motor Buttons */}
+          {/* Start / Stop / Reset Motor Buttons */}
           <div className="pt-2 flex items-center gap-2">
-            {!isRunning ? (
+            {isFault ? (
+              <button
+                type="button"
+                onClick={() => {
+                  if (onResetMotor) {
+                    onResetMotor(activeMotor.id);
+                  } else {
+                    onPowerToggle();
+                  }
+                }}
+                disabled={isProcessing}
+                className="w-full py-3.5 px-4 rounded-2xl bg-rose-600 hover:bg-rose-700 active:scale-95 text-white text-xs font-black flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md shadow-rose-600/25 disabled:opacity-50"
+              >
+                <RotateCcw className="w-4 h-4 stroke-[2.5]" />
+                <span>
+                  {language === 'hi' ? 'फॉल्ट हटाएं और मोटर रीसेट करें' : 'CLEAR FAULT & RESET PUMP'}
+                </span>
+              </button>
+            ) : !isRunning ? (
               <>
                 <button
                   type="button"
