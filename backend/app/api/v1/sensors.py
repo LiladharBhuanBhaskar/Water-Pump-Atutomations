@@ -265,10 +265,7 @@ async def get_sensor_latest_telemetry_endpoint(
             is_super_admin=is_super_admin
         )
         if latest is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"No telemetry readings found for sensor '{sensor_id}'."
-            )
+            return None
         return latest
     except SensorNotFoundException:
         raise HTTPException(
