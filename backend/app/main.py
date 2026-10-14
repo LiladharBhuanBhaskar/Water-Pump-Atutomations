@@ -135,7 +135,8 @@ async def _scheduler_background_loop():
             async with AsyncSessionLocal() as session:
                 await timer_scheduler.check_and_execute_schedules(session)
                 await timer_scheduler.check_and_process_motor_timers(session)
-                await session.commit()
+                if session.dirty or session.new or session.deleted:
+                    await session.commit()
         except asyncio.CancelledError:
             logger.debug("Scheduler loop cancelled.")
             break
@@ -148,19 +149,25 @@ async def _scheduler_background_loop():
 async def lifespan(app: FastAPI):
     print_database_identity()
     
-    # Initialize MQTT Handlers & Start MQTT Client Service (Non-blocking)
-    mqtt_ok = False
+    # Initialize MQTT Handlers & Start MQTT Client Service (Live check with brief 1.5s handshake wait)
+    mqtt_live = False
     try:
         from app.mqtt.handlers import setup_mqtt_handlers
-        from app.mqtt.client import mqtt_client_service
+        from app.mqtt.client import mqtt_client_service, MQTTConnectionStatus
         await setup_mqtt_handlers()
-        await mqtt_client_service.start()
-        mqtt_ok = True
+        mqtt_live = await mqtt_client_service.start(wait_for_connect=True, timeout=1.5)
     except Exception as e:
-        logger.warning(f"MQTT unavailable (non-fatal): {e}")
+        logger.warning(f"MQTT startup warning (non-fatal): {e}")
 
     scheduler_task = asyncio.create_task(_scheduler_background_loop())
-    mqtt_status = "MQTT OK" if mqtt_ok else "MQTT FAIL"
+    
+    if mqtt_live or mqtt_client_service.is_connected:
+        mqtt_status = f"MQTT OK ({settings.MQTT_BROKER_HOST})"
+    elif mqtt_client_service.status == MQTTConnectionStatus.CONNECTING:
+        mqtt_status = f"MQTT CONNECTING... ({settings.MQTT_BROKER_HOST})"
+    else:
+        mqtt_status = f"MQTT OFFLINE ({settings.MQTT_BROKER_HOST})"
+
     print(f"  {mqtt_status} | Scheduler OK | {settings.ENVIRONMENT} mode | Ready on :8000\n")
     try:
         yield
@@ -221,6 +228,7 @@ app.include_router(fleet_router, prefix=settings.API_V1_STR)
 app.include_router(devices_router, prefix=f"{settings.API_V1_STR}/devices")
 app.include_router(users_router, prefix=f"{settings.API_V1_STR}/users")
 app.include_router(ws_router, prefix=settings.API_V1_STR)
+app.include_router(ws_router)
 
 
 
