@@ -85,15 +85,24 @@ async def process_status_payload(device_uid: str, payload: Any) -> bool:
 
         motor_transitions = []
 
-        # Update motor statuses if provided
         motors_payload = payload.get("motors")
+        if not isinstance(motors_payload, list) and (payload.get("motor_state") or payload.get("motor_code")):
+            fallback_code = controller.motors[0].motor_code if controller.motors else "PUMP_01"
+            m_code = payload.get("motor_code") or fallback_code
+            m_stat = payload.get("motor_state") or payload.get("status") or "OFF"
+            motors_payload = [{
+                "motor_code": m_code,
+                "status": m_stat,
+                "fault_reason": payload.get("fault_reason") or payload.get("description")
+            }]
+
         if isinstance(motors_payload, list):
             motors_by_code: Dict[str, Motor] = {m.motor_code.upper(): m for m in controller.motors}
             for m_item in motors_payload:
                 if not isinstance(m_item, dict):
                     continue
                 m_code = str(m_item.get("motor_code", "")).strip().upper()
-                m_stat_str = str(m_item.get("status", "")).strip().upper()
+                m_stat_str = str(m_item.get("status") or m_item.get("motor_state", "")).strip().upper()
                 if m_code in motors_by_code:
                     motor = motors_by_code[m_code]
                     old_status = motor.status
@@ -101,10 +110,14 @@ async def process_status_payload(device_uid: str, payload: Any) -> bool:
                     # Map reported hardware status to MotorStateEvent
                     event_map = {
                         "ON": MotorStateEvent.STATUS_ON,
+                        "RUNNING": MotorStateEvent.STATUS_ON,
                         "OFF": MotorStateEvent.STATUS_OFF,
+                        "STOPPED": MotorStateEvent.STATUS_OFF,
+                        "IDLE": MotorStateEvent.STATUS_OFF,
                         "STARTING": MotorStateEvent.STATUS_STARTING,
                         "STOPPING": MotorStateEvent.STATUS_STOPPING,
                         "FAULT": MotorStateEvent.SAFETY_TRIP,
+                        "FAULT_LOCKED": MotorStateEvent.SAFETY_TRIP,
                         "OFFLINE": MotorStateEvent.HEARTBEAT_TIMEOUT,
                     }
                     state_event = event_map.get(m_stat_str)

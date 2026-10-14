@@ -72,6 +72,7 @@ class MQTTClientService:
         self.status = MQTTConnectionStatus.DISCONNECTED
         self._client: Optional[mqtt.Client] = None
         self._is_running = False
+        self._connected_event: Optional[asyncio.Event] = None
         self._message_queue: Optional[asyncio.Queue[MQTTMessage]] = None
         self._dispatch_task: Optional[asyncio.Task] = None
         self._loop: Optional[asyncio.AbstractEventLoop] = None
@@ -93,14 +94,19 @@ class MQTTClientService:
         if callback in self._callbacks:
             self._callbacks.remove(callback)
 
-    async def start(self) -> None:
-        """Initialize the MQTT client, start network loop and message dispatcher."""
+    async def start(self, wait_for_connect: bool = False, timeout: float = 2.0) -> bool:
+        """
+        Initialize the MQTT client, start network loop and message dispatcher.
+        If wait_for_connect is True, waits up to timeout seconds for the initial connection handshake.
+        Returns True if connected, False otherwise.
+        """
         if self._is_running:
             logger.debug("MQTT client service is already running.")
-            return
+            return self.is_connected
 
         self._loop = asyncio.get_running_loop()
         self._message_queue = asyncio.Queue()
+        self._connected_event = asyncio.Event()
         self._is_running = True
         self.status = MQTTConnectionStatus.CONNECTING
 
@@ -130,11 +136,24 @@ class MQTTClientService:
         except Exception as e:
             logger.error(f"Failed to initiate MQTT connection: {e}")
             self.status = MQTTConnectionStatus.ERROR
+            return False
+
+        if wait_for_connect:
+            try:
+                await asyncio.wait_for(self._connected_event.wait(), timeout=timeout)
+                return True
+            except asyncio.TimeoutError:
+                logger.warning(f"MQTT connection to {self.host}:{self.port} timed out after {timeout}s (continuing in background)")
+                return False
+
+        return self.is_connected
 
     async def stop(self) -> None:
         """Gracefully disconnect MQTT client and terminate worker tasks."""
         self._is_running = False
         self.status = MQTTConnectionStatus.DISCONNECTED
+        if self._connected_event is not None:
+            self._connected_event.clear()
 
         if self._client is not None:
             try:
@@ -215,22 +234,26 @@ class MQTTClientService:
 
     def _on_connect(self, client: mqtt.Client, userdata: Any, flags: Any, reason_code: Any, properties: Any = None) -> None:
         if reason_code == 0:
-            logger.debug(f"MQTT Connected to {self.host}:{self.port}")
             self.status = MQTTConnectionStatus.CONNECTED
+            if self._connected_event is not None and self._loop is not None:
+                self._loop.call_soon_threadsafe(self._connected_event.set)
+            logger.info(f"[MQTT] Connected to broker {self.host}:{self.port} (Client ID: {self.client_id})")
             # Restore subscriptions upon connection or reconnection
             for topic, qos in self._subscriptions:
                 client.subscribe(topic, qos=qos)
                 logger.debug(f"Subscribed to MQTT topic '{topic}' (QoS {qos})")
         else:
-            logger.error(f"MQTT connection failed with reason code: {reason_code}")
+            logger.error(f"[MQTT] Connection failed to {self.host}:{self.port} with reason code: {reason_code}")
             self.status = MQTTConnectionStatus.ERROR
 
     def _on_disconnect(self, client: mqtt.Client, userdata: Any, flags: Any, reason_code: Any, properties: Any = None) -> None:
+        if self._connected_event is not None and self._loop is not None:
+            self._loop.call_soon_threadsafe(self._connected_event.clear)
         if self._is_running:
-            logger.warning(f"MQTT disconnected unexpectedly (rc: {reason_code}). Reconnecting in background...")
+            logger.warning(f"[MQTT] Disconnected from broker {self.host}:{self.port} (rc: {reason_code}). Reconnecting in background...")
             self.status = MQTTConnectionStatus.RECONNECTING
         else:
-            logger.debug("MQTT disconnected cleanly.")
+            logger.debug("[MQTT] Disconnected cleanly.")
             self.status = MQTTConnectionStatus.DISCONNECTED
 
     def _on_message(self, client: mqtt.Client, userdata: Any, msg: mqtt.MQTTMessage) -> None:
