@@ -67,7 +67,8 @@ async def get_motor_by_id(session: AsyncSession, motor_id: uuid.UUID) -> Optiona
 async def list_motors_for_org_or_controller(
     session: AsyncSession,
     organization_id: Optional[uuid.UUID] = None,
-    controller_id: Optional[uuid.UUID] = None
+    controller_id: Optional[uuid.UUID] = None,
+    station_id: Optional[uuid.UUID] = None
 ) -> Sequence[Motor]:
     stmt = (
         select(Motor)
@@ -80,6 +81,8 @@ async def list_motors_for_org_or_controller(
         stmt = stmt.where(Site.organization_id == organization_id)
     if controller_id is not None:
         stmt = stmt.where(Motor.controller_id == controller_id)
+    if station_id is not None:
+        stmt = stmt.where(Controller.station_id == station_id)
 
     stmt = stmt.order_by(Motor.created_at.desc())
     res = await session.execute(stmt)

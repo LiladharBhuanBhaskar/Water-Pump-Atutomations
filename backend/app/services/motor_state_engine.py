@@ -589,6 +589,9 @@ def parse_payload_timestamp(payload: Any, fallback: Optional[datetime] = None) -
         return ensure_utc(raw_ts)
 
     if isinstance(raw_ts, (int, float)):
+        # Uptime counters (like ESP32 millis()/1000) are small integers (< 1e9, i.e. before year 2001)
+        if raw_ts < 1000000000:
+            return now
         try:
             return datetime.fromtimestamp(raw_ts, tz=timezone.utc)
         except (ValueError, OSError):
@@ -596,6 +599,12 @@ def parse_payload_timestamp(payload: Any, fallback: Optional[datetime] = None) -
 
     if isinstance(raw_ts, str):
         try:
+            # Handle numeric string timestamp
+            if raw_ts.strip().isdigit():
+                val = float(raw_ts)
+                if val < 1000000000:
+                    return now
+                return datetime.fromtimestamp(val, tz=timezone.utc)
             # Handle ISO string (e.g. 2026-10-06T08:30:00Z or +00:00)
             cleaned = raw_ts.replace("Z", "+00:00")
             dt = datetime.fromisoformat(cleaned)
