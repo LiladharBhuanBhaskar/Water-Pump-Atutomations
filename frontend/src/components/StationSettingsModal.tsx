@@ -94,6 +94,7 @@ export const StationSettingsModal: React.FC<StationSettingsModalProps> = ({
       const updatePayload: StationSettingsUpdate = {
         timezone: settings.timezone,
         auto_stop_on_tank_full: settings.auto_stop_on_tank_full,
+        auto_stop_on_turbidity: settings.auto_stop_on_turbidity,
         water_level_threshold: settings.water_level_threshold,
         turbidity_threshold: settings.turbidity_threshold,
         default_timer_seconds: settings.default_timer_seconds,
@@ -284,7 +285,7 @@ export const StationSettingsModal: React.FC<StationSettingsModalProps> = ({
             </div>
 
             {/* Toggle Switches */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2">
               <label className="flex items-center gap-3 p-3.5 rounded-2xl bg-slate-900/60 border border-slate-800 cursor-pointer">
                 <input
                   type="checkbox"
@@ -296,8 +297,24 @@ export const StationSettingsModal: React.FC<StationSettingsModalProps> = ({
                   className="w-4 h-4 rounded text-cyan-500 focus:ring-cyan-400 bg-slate-800 border-slate-700"
                 />
                 <div>
-                  <span className="text-xs font-bold text-white block">Auto-Stop on Tank Full</span>
-                  <span className="text-[11px] text-slate-400">Safely stop pump when tank hits high threshold</span>
+                  <span className="text-xs font-bold text-white block">Tank Overflow Cutoff</span>
+                  <span className="text-[11px] text-slate-400">Standby auto-stop on full tank (not fault)</span>
+                </div>
+              </label>
+
+              <label className="flex items-center gap-3 p-3.5 rounded-2xl bg-slate-900/60 border border-slate-800 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={settings.auto_stop_on_turbidity ?? true}
+                  disabled={!canEdit}
+                  onChange={(e) =>
+                    setSettings({ ...settings, auto_stop_on_turbidity: e.target.checked })
+                  }
+                  className="w-4 h-4 rounded text-cyan-500 focus:ring-cyan-400 bg-slate-800 border-slate-700"
+                />
+                <div>
+                  <span className="text-xs font-bold text-white block">Turbidity Clarity Cutoff</span>
+                  <span className="text-[11px] text-slate-400">Standby pause on murky water (not fault)</span>
                 </div>
               </label>
 
@@ -369,11 +386,11 @@ export const StationSettingsModal: React.FC<StationSettingsModalProps> = ({
                       onChange={(e) => setRuleType(e.target.value as AutomationRuleType)}
                       className="w-full px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white"
                     >
-                      <option value="TANK_FULL_AUTO_STOP">Tank Full Auto Stop</option>
-                      <option value="SOURCE_DEPLETION_AUTO_STOP">Source Depletion Trip</option>
-                      <option value="TURBIDITY_CUTOFF">Turbidity Cutoff</option>
-                      <option value="DRY_RUN_PROTECTION">Dry-Run Protection</option>
-                      <option value="ELECTRICAL_OVERLOAD_PROTECTION">Electrical Overload Trip</option>
+                      <option value="TANK_FULL_AUTO_STOP">Tank Overflow Auto-Stop (Operational Cutoff)</option>
+                      <option value="TURBIDITY_CUTOFF">Turbidity Clarity Cutoff (Water Quality Standby)</option>
+                      <option value="SOURCE_DEPLETION_AUTO_STOP">Source Sump Depletion Trip</option>
+                      <option value="DRY_RUN_PROTECTION">Dry-Run Protection (Hardware Fault)</option>
+                      <option value="ELECTRICAL_OVERLOAD_PROTECTION">Electrical Overload Trip (Hardware Fault)</option>
                     </select>
                   </div>
 
