@@ -57,9 +57,10 @@ void HydraMqttClient::sendTelemetry(const SensorReadings& readings) {
     JsonObject sensors = doc.createNestedObject("sensors");
     sensors["water_level_pct"] = readings.water_level_pct;
     sensors["turbidity_ntu"] = readings.turbidity_ntu;
+    sensors["distance_cm"] = readings.distance_cm;
     sensors["current_amps"] = readings.current_amps;
-    sensors["float_high"] = readings.float_high_triggered;
-    sensors["float_low"] = readings.float_low_triggered;
+    sensors["overflow_alert"] = readings.overflow_alert;
+    sensors["dry_run_alert"] = readings.dry_run_alert;
 
     if (safetyEngine.isFaulted()) {
         doc["fault_reason"] = safetyEngine.getLastTripReason();

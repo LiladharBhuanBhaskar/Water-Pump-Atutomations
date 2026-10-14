@@ -11,9 +11,13 @@ SafetyEngine::SafetyEngine()
 
 void SafetyEngine::init() {
     pinMode(PIN_RELAY_MOTOR_START, OUTPUT);
-    pinMode(PIN_EMERGENCY_STOP_BTN, INPUT_PULLUP);
-    pinMode(PIN_FLOAT_HIGH, INPUT_PULLUP);
-    pinMode(PIN_FLOAT_LOW, INPUT_PULLUP);
+    pinMode(PIN_ONBOARD_LED, OUTPUT);
+    pinMode(PIN_BUZZER, OUTPUT);
+    pinMode(PIN_TRIG, OUTPUT);
+    pinMode(PIN_ECHO, INPUT);
+
+    digitalWrite(PIN_TRIG, LOW);
+    digitalWrite(PIN_BUZZER, LOW);
 
     // Default safe power-on state: relay strictly OFF
     setRelay(false);
@@ -22,6 +26,7 @@ void SafetyEngine::init() {
 
 void SafetyEngine::setRelay(bool on) {
     digitalWrite(PIN_RELAY_MOTOR_START, on ? HIGH : LOW);
+    digitalWrite(PIN_ONBOARD_LED, on ? HIGH : LOW);
 }
 
 void SafetyEngine::trip(const char* reason) {
@@ -29,6 +34,11 @@ void SafetyEngine::trip(const char* reason) {
     state = STATE_FAULT_LOCKED;
     strncpy(lastTripReason, reason, sizeof(lastTripReason) - 1);
     Serial.printf("[SAFETY TRIP] Motor stopped: %s\n", reason);
+
+    // Sound audible warning pulse on buzzer
+    digitalWrite(PIN_BUZZER, HIGH);
+    delay(150);
+    digitalWrite(PIN_BUZZER, LOW);
 }
 
 bool SafetyEngine::requestStart(const char* command_id) {
@@ -48,28 +58,16 @@ bool SafetyEngine::requestStart(const char* command_id) {
         strncpy(lastCommandId, command_id, sizeof(lastCommandId) - 1);
     }
 
-    // 3. Hardware check: Is emergency stop button engaged?
-    if (digitalRead(PIN_EMERGENCY_STOP_BTN) == LOW) {
-        trip("EMERGENCY_STOP_ENGAGED");
-        return false;
-    }
-
-    // 4. Check dry-run lower float switch
-    if (digitalRead(PIN_FLOAT_LOW) == LOW) {
-        trip("SOURCE_DRY_FLOAT_TRIP");
-        return false;
-    }
-
-    // 5. Check overhead tank full float switch
-    if (digitalRead(PIN_FLOAT_HIGH) == LOW) {
-        trip("TANK_FULL_FLOAT_TRIP");
-        return false;
-    }
-
     // All safety preconditions verified -> Engage relay
     setRelay(true);
     state = STATE_RUNNING;
     motorStartTime = millis();
+
+    // Confirm start with short beep
+    digitalWrite(PIN_BUZZER, HIGH);
+    delay(100);
+    digitalWrite(PIN_BUZZER, LOW);
+
     Serial.println("[MOTOR] Started successfully");
     return true;
 }
@@ -81,6 +79,11 @@ void SafetyEngine::requestStop(const char* reason) {
     }
     strncpy(lastTripReason, reason ? reason : "MANUAL_STOP", sizeof(lastTripReason) - 1);
     Serial.printf("[MOTOR] Stopped: %s\n", lastTripReason);
+
+    // Short stop tone
+    digitalWrite(PIN_BUZZER, HIGH);
+    delay(200);
+    digitalWrite(PIN_BUZZER, LOW);
 }
 
 void SafetyEngine::triggerEmergencyStop() {
@@ -88,14 +91,6 @@ void SafetyEngine::triggerEmergencyStop() {
 }
 
 void SafetyEngine::tick(const SensorReadings& readings) {
-    // Check hardware E-Stop continuously
-    if (digitalRead(PIN_EMERGENCY_STOP_BTN) == LOW) {
-        if (state == STATE_RUNNING) {
-            triggerEmergencyStop();
-        }
-        return;
-    }
-
     if (state != STATE_RUNNING) {
         return;
     }
@@ -119,12 +114,12 @@ void SafetyEngine::tick(const SensorReadings& readings) {
     }
 
     // 4. Water level limits
-    if (readings.water_level_pct >= MAX_WATER_LEVEL_PCT || readings.float_high_triggered) {
+    if (readings.water_level_pct >= MAX_WATER_LEVEL_PCT || readings.overflow_alert) {
         trip("TANK_FULL_OVERFLOW_PREVENTION");
         return;
     }
 
-    if (readings.water_level_pct <= MIN_WATER_LEVEL_PCT || readings.float_low_triggered) {
+    if (readings.water_level_pct <= MIN_WATER_LEVEL_PCT || readings.dry_run_alert) {
         trip("DRY_RUN_PROTECTION");
         return;
     }
@@ -156,6 +151,7 @@ void SafetyEngine::resetFault() {
     if (state == STATE_FAULT_LOCKED) {
         state = STATE_IDLE;
         memset(lastTripReason, 0, sizeof(lastTripReason));
+        digitalWrite(PIN_BUZZER, LOW);
         Serial.println("[SAFETY] Fault state reset to IDLE");
     }
 }
