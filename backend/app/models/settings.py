@@ -43,6 +43,12 @@ class StationSettings(BaseModel):
         default=False
     )
     
+    auto_stop_on_turbidity: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True
+    )
+    
     water_level_threshold: Mapped[Optional[float]] = mapped_column(
         Numeric(20, 6),
         nullable=True
