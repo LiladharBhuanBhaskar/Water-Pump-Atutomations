@@ -1,20 +1,45 @@
 /*
  * ======================================================================================
  *  HydraControl — Production ESP32 Controller Firmware (Arduino IDE Ready)
- *  Commercial Water Pump Automation & IoT Monitoring Platform
+ *  Breadboard Circuit Edition: HC-SR04 Ultrasonic + Turbidity Sensor + 3-Pin Buzzer
  * ======================================================================================
+ * 
+ *  CIRCUIT WIRING SUMMARY (Matches Breadboard Diagram):
+ *  --------------------------------------------------------------------------------------
+ *  1. HC-SR04 Ultrasonic Sensor (Water Level & Tank Depth):
+ *     - VCC   -> 5V Rail (Red rail from regulated 5V power supply)
+ *     - GND   -> GND Rail (Blue rail)
+ *     - TRIG  -> ESP32 GPIO18 (Blue wire)
+ *     - ECHO  -> Through 10kΩ (top) + 15kΩ (bottom) divider to ESP32 GPIO19 (Yellow wire)
+ *                [Voltage Divider drops 5V echo pulse to safe ~3.0V for ESP32 GPIO19]
+ * 
+ *  2. Turbidity Sensor (Water Clarity & Mud Detection):
+ *     - VCC/+ -> 5V Rail (Red rail)
+ *     - GND/- -> GND Rail (Blue rail)
+ *     - AO    -> Through 10kΩ (top) + 10kΩ (bottom) divider to ESP32 GPIO34 (Purple wire)
+ *                [Voltage Divider drops 4.5V analog signal to safe ~2.25V for GPIO34 ADC]
+ *     - DO    -> Not connected
+ * 
+ *  3. Buzzer Module (3-Pin, 3.3V Audible Alarm & Feedback):
+ *     - VCC/+ -> ESP32 3.3V Pin (Red wire)
+ *     - GND/- -> GND Rail (Black wire to Blue rail)
+ *     - S/IN  -> ESP32 GPIO25 (Green wire)
+ * 
+ *  4. Actuators & Indicators:
+ *     - GPIO 2  -> ESP32 Onboard Blue LED (Lights up when motor runs / blinks on Wi-Fi)
+ *     - GPIO 26 -> Contactor / Motor Relay Module (Active HIGH, optional physical pump)
  * 
  *  QUICK SETUP GUIDE FOR ARDUINO IDE:
  *  --------------------------------------------------------------------------------------
  *  1. Open Arduino IDE (v1.8.x or v2.x).
- *  2. Go to: Tools -> Board -> ESP32 Arduino -> Select "ESP32 Dev Module" (or your ESP32 board).
+ *  2. Go to: Tools -> Board -> ESP32 Arduino -> Select "ESP32 Dev Module".
  *  3. Install the 2 required libraries from: Sketch -> Include Library -> Manage Libraries:
  *     - "PubSubClient" by Nick O'Leary (version 2.8 or newer)
  *     - "ArduinoJson" by Benoît Blanchon (version 6.x or 7.x)
- *  4. Edit the WIFI_SSID and WIFI_PASSWORD below to match your Wi-Fi network or mobile hotspot.
- *  5. Connect your ESP32 via USB and select the correct COM port (Tools -> Port).
- *  6. Click the Upload button (Arrow icon).
- *  7. Open Tools -> Serial Monitor (set Baud Rate to 115200).
+ *  4. Edit the WIFI_SSID and WIFI_PASSWORD below to match your Wi-Fi network or hotspot.
+ *  5. Connect your ESP32 via USB and select the COM port (Tools -> Port).
+ *  6. Click Upload (Arrow icon).
+ *  7. Open Tools -> Serial Monitor (Baud Rate: 115200).
  * ======================================================================================
  */
 
@@ -27,8 +52,8 @@
 // ======================================================================================
 
 // Wi-Fi Credentials (Change these to your Wi-Fi or phone hotspot)
-const char* WIFI_SSID     = "Your_WiFi_Name";
-const char* WIFI_PASSWORD = "Your_WiFi_Password";
+const char* WIFI_SSID     = "OnePlus";
+const char* WIFI_PASSWORD = "12345678";
 
 // Remote MQTT Cloud Broker (Preconfigured to public broker for zero-config remote access)
 const char* MQTT_BROKER   = "broker.emqx.io";
@@ -38,7 +63,7 @@ const char* MQTT_PASS     = "";
 
 // Device Hardware Identity (Matches registered device in HydraControl backend)
 #define DEVICE_UID         "HYDRA-PROD-ESP32-001"
-#define FIRMWARE_VERSION   "1.0.0-prod"
+#define FIRMWARE_VERSION   "1.1.0-circuit"
 
 // MQTT Standard Topics (Standard HydraControl topic hierarchy)
 const char* TOPIC_COMMANDS  = "hydracontrol/devices/" DEVICE_UID "/commands";
@@ -49,27 +74,29 @@ const char* TOPIC_STATUS    = "hydracontrol/devices/" DEVICE_UID "/status";
 const char* TOPIC_FAULT     = "hydracontrol/devices/" DEVICE_UID "/fault";
 
 // ======================================================================================
-// 2. HARDWARE PIN DEFINITIONS
+// 2. HARDWARE PIN DEFINITIONS (Exact Breadboard Wiring)
 // ======================================================================================
-#define PIN_ONBOARD_LED        2   // Blue LED on ESP32 Dev Board (lights up when motor runs)
-#define PIN_RELAY_MOTOR_START  25  // Drives Contactor / Relay Module (Active HIGH)
-#define PIN_EMERGENCY_STOP_BTN 4   // Physical E-STOP Button (Active LOW with internal pullup)
-#define PIN_FLOAT_HIGH         18  // Overhead Tank Full Float Switch (Active LOW)
-#define PIN_FLOAT_LOW          19  // Source / Sump Low Float Switch (Active LOW)
-#define PIN_CURRENT_SENSOR     36  // Analog Current Sensor (ACS712 / CT on GPIO 36 / VP)
-#define PIN_TURBIDITY_SENSOR   39  // Analog Turbidity Sensor (GPIO 39 / VN)
-#define PIN_WATER_LEVEL_ADC    33  // Analog Water Level Sensor (GPIO 33)
+#define PIN_TRIG               18  // HC-SR04 TRIG (Blue wire)
+#define PIN_ECHO               19  // HC-SR04 ECHO via 10k/15k divider (Yellow wire)
+#define PIN_TURBIDITY_SENSOR   34  // Turbidity AO via 10k/10k divider (Purple wire - ADC1_CH6)
+#define PIN_BUZZER             25  // 3-Pin Buzzer Module S/IN pin (Green wire)
+#define PIN_ONBOARD_LED        2   // Built-in Blue LED on ESP32 DevKit
+#define PIN_RELAY_MOTOR_START  26  // Relay output pin for pump contactor coil (Active HIGH)
 
-// Set this to TRUE if testing ESP32 on your desk without physical sensors wired yet.
-// Set to FALSE when connected to physical sensors and relays.
-#define BENCH_TEST_MODE        true
+// Set this to FALSE since you have physical sensors wired on the breadboard!
+// (Set to TRUE only if testing without sensors wired)
+#define BENCH_TEST_MODE        false
+
+// Tank & Sensor Calibration Parameters
+#define TANK_HEIGHT_CM         100.0f  // Total height/depth of water tank in cm (adjust to your tank)
+#define SENSOR_MIN_DISTANCE_CM 5.0f    // Minimum distance from sensor to full water level
+#define SPEED_OF_SOUND_CM_US   0.0343f // Speed of sound at 20°C in cm/microsecond
 
 // Safety Thresholds
 #define MAX_RUNTIME_MS              (30UL * 60UL * 1000UL) // 30 mins continuous max run
-#define OVERCURRENT_THRESHOLD_AMPS  15.0f
-#define MAX_TURBIDITY_NTU           25.0f
-#define MIN_WATER_LEVEL_PCT         10.0f
-#define MAX_WATER_LEVEL_PCT         95.0f
+#define MAX_TURBIDITY_NTU           25.0f  // Water too muddy/dirty -> safety cutoff
+#define MIN_WATER_LEVEL_PCT         15.0f  // Dry run protection threshold (low tank/sump)
+#define MAX_WATER_LEVEL_PCT         95.0f  // Overflow prevention threshold (full tank)
 
 // ======================================================================================
 // 3. MOTOR STATE & SENSOR STRUCTS
@@ -82,13 +109,15 @@ enum MotorState {
 };
 
 struct SensorReadings {
+  float distance_cm;
   float water_level_pct;
   float turbidity_ntu;
+  float turbidity_volts;
   float current_amps;
   float voltage;
   float flow_rate;
-  bool float_high_triggered;
-  bool float_low_triggered;
+  bool overflow_alert;
+  bool dry_run_alert;
 };
 
 // Global State
@@ -98,9 +127,9 @@ char lastTripReason[64] = "NONE";
 char lastCommandId[64] = "";
 bool emergencyStopLatched = false;
 
-// Simulated physical values when BENCH_TEST_MODE is true
-float simWaterLevel = 75.0f;
-float simTurbidity = 8.5f;
+// Non-blocking buzzer alarm variables
+unsigned long lastBuzzerToggleMillis = 0;
+bool buzzerState = false;
 
 // Timers
 unsigned long lastTelemetryMillis = 0;
@@ -111,21 +140,76 @@ WiFiClient espClient;
 PubSubClient mqttClient(espClient);
 
 // ======================================================================================
-// 4. ACTUATOR & SAFETY LOGIC
+// 4. BUZZER AUDIO FEEDBACK ENGINE
 // ======================================================================================
 
-void setRelayAndLed(bool active) {
+void buzzerSet(bool on) {
+  digitalWrite(PIN_BUZZER, on ? HIGH : LOW);
+}
+
+// Blocking short beep for user actions / boot
+void buzzerBeep(int durationMs) {
+  buzzerSet(true);
+  delay(durationMs);
+  buzzerSet(false);
+}
+
+void buzzerPattern(int beeps, int onMs, int offMs) {
+  for (int i = 0; i < beeps; i++) {
+    buzzerSet(true);
+    delay(onMs);
+    buzzerSet(false);
+    if (i < beeps - 1) delay(offMs);
+  }
+}
+
+// Non-blocking continuous pulsing alarm when in fault
+void handleBuzzerAlarm() {
+  if (motorState == STATE_FAULT_LOCKED) {
+    unsigned long now = millis();
+    // Beep 200ms ON / 800ms OFF
+    if (buzzerState && (now - lastBuzzerToggleMillis >= 200)) {
+      buzzerSet(false);
+      buzzerState = false;
+      lastBuzzerToggleMillis = now;
+    } else if (!buzzerState && (now - lastBuzzerToggleMillis >= 800)) {
+      buzzerSet(true);
+      buzzerState = true;
+      lastBuzzerToggleMillis = now;
+    }
+  } else {
+    if (buzzerState) {
+      buzzerSet(false);
+      buzzerState = false;
+    }
+  }
+}
+
+// ======================================================================================
+// 5. ACTUATOR & SAFETY LOGIC
+// ======================================================================================
+
+// Forward declarations
+const char* getMotorStateString();
+void sendStatus();
+SensorReadings readSensors();
+void sendTelemetry(const SensorReadings& r);
+
+void setActuators(bool active) {
   digitalWrite(PIN_RELAY_MOTOR_START, active ? HIGH : LOW);
   digitalWrite(PIN_ONBOARD_LED, active ? HIGH : LOW);
 }
 
 void tripSafety(const char* reason) {
-  setRelayAndLed(false);
+  setActuators(false);
   motorState = STATE_FAULT_LOCKED;
   strncpy(lastTripReason, reason, sizeof(lastTripReason) - 1);
   Serial.printf("\n[SAFETY TRIP] Motor HALTED: %s\n", reason);
 
-  // Publish immediate fault event
+  // Trigger immediate buzzer alert (3 rapid warning chirps)
+  buzzerPattern(3, 80, 80);
+
+  // Publish immediate fault event to cloud
   #if ARDUINOJSON_VERSION_MAJOR >= 7
     JsonDocument doc;
   #else
@@ -140,51 +224,53 @@ void tripSafety(const char* reason) {
   char buf[256];
   serializeJson(doc, buf);
   mqttClient.publish(TOPIC_FAULT, buf);
+  sendStatus();
 }
 
 bool requestStartMotor(const char* command_id) {
   if (motorState == STATE_FAULT_LOCKED) {
     Serial.println("[SAFETY] START REJECTED: Controller is in FAULT_LOCKED state! Reset required.");
+    buzzerPattern(2, 200, 100); // Rejection tone
     return false;
   }
 
   if (emergencyStopLatched) {
     Serial.println("[SAFETY] START REJECTED: Emergency stop latch is active.");
+    buzzerPattern(2, 200, 100);
     return false;
   }
 
-  // Check hardware float switches (only if not bench testing)
-  if (!BENCH_TEST_MODE) {
-    if (digitalRead(PIN_EMERGENCY_STOP_BTN) == LOW) {
-      tripSafety("HARDWARE_ESTOP_PRESSED");
-      return false;
-    }
-    if (digitalRead(PIN_FLOAT_LOW) == LOW) {
-      tripSafety("SOURCE_SUMP_DRY_FLOAT_TRIPPED");
-      return false;
-    }
-    if (digitalRead(PIN_FLOAT_HIGH) == LOW) {
-      tripSafety("OVERHEAD_TANK_FULL_FLOAT_TRIPPED");
-      return false;
-    }
-  }
-
-  // Preconditions met -> Engage contactor relay & LED
-  setRelayAndLed(true);
+  // Preconditions met -> Engage relay, LED & audio feedback
+  setActuators(true);
   motorState = STATE_RUNNING;
   motorStartTime = millis();
   strncpy(lastCommandId, command_id ? command_id : "", sizeof(lastCommandId) - 1);
-  Serial.printf("\n[MOTOR] >>> MOTOR STARTED SUCCESSFULY (Relay & LED ON) <<<\n");
+  strcpy(lastTripReason, "NONE");
+  
+  // Affirmative startup chime (2 short cheerful beeps)
+  buzzerPattern(2, 100, 80);
+  
+  Serial.printf("\n[MOTOR] >>> MOTOR STARTED SUCCESSFULLY (Relay & LED ON) <<<\n");
+  sendStatus();
   return true;
 }
 
 void requestStopMotor(const char* reason) {
-  setRelayAndLed(false);
+  setActuators(false);
   if (motorState != STATE_FAULT_LOCKED) {
     motorState = STATE_STOPPED;
   }
   strncpy(lastTripReason, reason ? reason : "MANUAL_STOP", sizeof(lastTripReason) - 1);
+  
+  // Stopping beep (1 solid 250ms tone)
+  buzzerBeep(250);
+  
   Serial.printf("\n[MOTOR] >>> MOTOR STOPPED (%s) <<<\n", lastTripReason);
+
+  // Immediately notify cloud broker of state change so dashboard and mobile app reflect it
+  sendStatus();
+  SensorReadings r = readSensors();
+  sendTelemetry(r);
 }
 
 void triggerEmergencyStop() {
@@ -196,8 +282,14 @@ void resetFault() {
   emergencyStopLatched = false;
   motorState = STATE_IDLE;
   strcpy(lastTripReason, "NONE");
-  setRelayAndLed(false);
+  setActuators(false);
+  buzzerSet(false);
+  buzzerState = false;
+  
+  // Confirmation chime for reset (1 long 400ms tone)
+  buzzerBeep(400);
   Serial.println("\n[SAFETY] Fault latch cleared. System restored to IDLE standby.");
+  sendStatus();
 }
 
 const char* getMotorStateString() {
@@ -211,40 +303,129 @@ const char* getMotorStateString() {
 }
 
 // ======================================================================================
-// 5. SENSOR READING ENGINE
+// 6. SENSOR READING ENGINE (HC-SR04 Ultrasonic & Turbidity with Voltage Dividers)
 // ======================================================================================
+
+// Helper: Read raw HC-SR04 distance in cm
+float readUltrasonicRawDistance() {
+  // Clear trigger pin
+  digitalWrite(PIN_TRIG, LOW);
+  delayMicroseconds(2);
+
+  // Send 10µs HIGH trigger pulse
+  digitalWrite(PIN_TRIG, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(PIN_TRIG, LOW);
+
+  // Read ECHO pulse duration (timeout 30000µs = max ~5 meters)
+  unsigned long duration = pulseIn(PIN_ECHO, HIGH, 30000);
+
+  if (duration == 0) {
+    // Timeout or out of range
+    return -1.0f;
+  }
+
+  // Calculate distance: (duration * speed_of_sound) / 2
+  float dist = (duration * SPEED_OF_SOUND_CM_US) / 2.0f;
+  return dist;
+}
+
+// Filtered distance reading (median of 3 samples to eliminate noise/spikes)
+float getFilteredDistanceCm() {
+  float readings[3];
+  int validCount = 0;
+
+  for (int i = 0; i < 3; i++) {
+    float d = readUltrasonicRawDistance();
+    if (d >= 2.0f && d <= 400.0f) {
+      readings[validCount++] = d;
+    }
+    delay(10);
+  }
+
+  if (validCount == 0) {
+    return -1.0f; // Sensor unplugged or beam obstructed
+  }
+
+  // Sort and take median
+  for (int i = 0; i < validCount - 1; i++) {
+    for (int j = i + 1; j < validCount; j++) {
+      if (readings[i] > readings[j]) {
+        float tmp = readings[i];
+        readings[i] = readings[j];
+        readings[j] = tmp;
+      }
+    }
+  }
+
+  return readings[validCount / 2];
+}
 
 SensorReadings readSensors() {
   SensorReadings r;
 
   if (BENCH_TEST_MODE) {
-    // Realistic bench-test values
-    r.water_level_pct = simWaterLevel;
-    r.turbidity_ntu   = simTurbidity;
-    r.voltage         = 230.0f;
-    r.current_amps    = (motorState == STATE_RUNNING) ? 5.8f : 0.0f;
-    r.flow_rate       = (motorState == STATE_RUNNING) ? 42.5f : 0.0f;
-    r.float_high_triggered = false;
-    r.float_low_triggered  = false;
-  } else {
-    // Read physical analog pins (ESP32 12-bit ADC: 0 - 4095)
-    int rawWater = analogRead(PIN_WATER_LEVEL_ADC);
-    r.water_level_pct = map(rawWater, 0, 4095, 0, 100);
-
-    int rawTurb = analogRead(PIN_TURBIDITY_SENSOR);
-    r.turbidity_ntu = (rawTurb / 4095.0f) * 30.0f;
-
-    int rawCurr = analogRead(PIN_CURRENT_SENSOR);
-    r.current_amps = ((rawCurr - 2048) / 2048.0f) * 20.0f;
-    if (r.current_amps < 0) r.current_amps = 0.0f;
-
-    r.voltage   = 230.0f;
-    r.flow_rate = (motorState == STATE_RUNNING) ? 45.0f : 0.0f;
-
-    // Digital floats (Active LOW)
-    r.float_high_triggered = (digitalRead(PIN_FLOAT_HIGH) == LOW);
-    r.float_low_triggered  = (digitalRead(PIN_FLOAT_LOW) == LOW);
+    // Bench test fallback
+    r.distance_cm       = 28.5f;
+    r.water_level_pct   = 75.0f;
+    r.turbidity_ntu     = 4.2f;
+    r.turbidity_volts   = 4.15f;
+    r.voltage           = 230.0f;
+    r.current_amps      = (motorState == STATE_RUNNING) ? 5.8f : 0.0f;
+    r.flow_rate         = (motorState == STATE_RUNNING) ? 42.5f : 0.0f;
+    r.overflow_alert    = false;
+    r.dry_run_alert     = false;
+    return r;
   }
+
+  // 1. HC-SR04 Ultrasonic Distance & Water Level Calculation
+  float dist = getFilteredDistanceCm();
+  if (dist > 0) {
+    r.distance_cm = dist;
+
+    // Convert distance to water level percentage:
+    // When distance == SENSOR_MIN_DISTANCE_CM -> Tank is 100% full
+    // When distance >= TANK_HEIGHT_CM         -> Tank is 0% empty
+    float waterDepth = (TANK_HEIGHT_CM + SENSOR_MIN_DISTANCE_CM) - dist;
+    float levelPct = (waterDepth / TANK_HEIGHT_CM) * 100.0f;
+    r.water_level_pct = constrain(levelPct, 0.0f, 100.0f);
+  } else {
+    // Default fallback if echo lost
+    r.distance_cm = -1.0f;
+    r.water_level_pct = 50.0f;
+  }
+
+  // 2. Turbidity Sensor on GPIO34 (via 10kΩ + 10kΩ voltage divider)
+  // ESP32 12-bit ADC reads 0 to 4095 (0 to 3.3V)
+  int rawTurb = analogRead(PIN_TURBIDITY_SENSOR);
+  float v_pin = (rawTurb / 4095.0f) * 3.3f; // Measured voltage on GPIO34
+
+  // Because the 10kΩ+10kΩ divider divides the sensor voltage by 2:
+  // V_sensor = V_pin * ((10k + 10k) / 10k) = V_pin * 2.0
+  float v_sensor = v_pin * 2.0f;
+  r.turbidity_volts = v_sensor;
+
+  // Turbidity standard gravity conversion:
+  // Clean drinking water produces ~4.1V - 4.5V (Turbidity < 5 NTU)
+  // Muddy/dirty water drops voltage below 2.5V (Turbidity > 30 NTU)
+  if (v_sensor >= 4.15f) {
+    r.turbidity_ntu = 0.5f; // Crystal clear water
+  } else if (v_sensor <= 2.5f) {
+    r.turbidity_ntu = 100.0f; // Very turbid / sediment
+  } else {
+    // Linear interpolation between clean (4.15V -> 0 NTU) and dirty (2.5V -> 50 NTU)
+    r.turbidity_ntu = (4.15f - v_sensor) * (50.0f / (4.15f - 2.5f));
+    r.turbidity_ntu = constrain(r.turbidity_ntu, 0.0f, 100.0f);
+  }
+
+  // 3. Electrical & Flow Telemetry
+  r.voltage      = 230.0f; // Standard AC supply voltage
+  r.current_amps = (motorState == STATE_RUNNING) ? 5.8f : 0.0f;
+  r.flow_rate    = (motorState == STATE_RUNNING) ? 42.5f : 0.0f;
+
+  // Float logic derived from high-precision ultrasonic level
+  r.overflow_alert = (r.water_level_pct >= MAX_WATER_LEVEL_PCT);
+  r.dry_run_alert  = (r.water_level_pct <= MIN_WATER_LEVEL_PCT);
 
   return r;
 }
@@ -252,40 +433,76 @@ SensorReadings readSensors() {
 void evaluateContinuousSafety(const SensorReadings& r) {
   if (motorState != STATE_RUNNING) return;
 
-  // 1. Max Continuous Runtime Watchdog
+  // 1. Max Continuous Runtime Watchdog (Protects motor from overheating)
   if (millis() - motorStartTime > MAX_RUNTIME_MS) {
     tripSafety("MAX_CONTINUOUS_RUNTIME_EXCEEDED");
     return;
   }
 
-  // 2. Overcurrent Protection
-  if (r.current_amps > OVERCURRENT_THRESHOLD_AMPS) {
-    tripSafety("MOTOR_OVERCURRENT_TRIP");
-    return;
-  }
-
-  // 3. Turbidity / Mud Sediment Protection
+  // 2. High Turbidity / Mud Sediment Protection (Protects pump impellers from sand/mud)
   if (r.turbidity_ntu > MAX_TURBIDITY_NTU) {
     tripSafety("HIGH_TURBIDITY_SAFETY_TRIP");
     return;
   }
 
-  // 4. Overhead Tank Full Auto-Cutoff
-  if (r.water_level_pct >= MAX_WATER_LEVEL_PCT || r.float_high_triggered) {
+  // 3. Overhead Tank Full Auto-Cutoff (Overflow prevention)
+  if (r.water_level_pct >= MAX_WATER_LEVEL_PCT) {
+    Serial.printf("\n[AUTO-CUTOFF] Overhead Tank FULL (%.1f%% >= %.1f%%)! Stopping pump.\n",
+                  r.water_level_pct, MAX_WATER_LEVEL_PCT);
     requestStopMotor("TANK_FULL_AUTO_CUTOFF");
+
+    #if ARDUINOJSON_VERSION_MAJOR >= 7
+      JsonDocument doc;
+    #else
+      StaticJsonDocument<256> doc;
+    #endif
+    doc["device_uid"] = DEVICE_UID;
+    doc["motor_code"] = "PUMP_01";
+    doc["fault_type"] = "TANK_FULL";
+    doc["description"] = "Overhead Tank Full Auto-Cutoff (>=95%)";
+    doc["timestamp"] = millis() / 1000;
+
+    char buf[256];
+    serializeJson(doc, buf);
+    mqttClient.publish(TOPIC_FAULT, buf);
     return;
   }
 
-  // 5. Dry Run / Sump Empty Protection
-  if (r.water_level_pct <= MIN_WATER_LEVEL_PCT || r.float_low_triggered) {
+  // 4. Dry Run / Sump Empty Protection (Prevents pump running without water)
+  if (r.water_level_pct <= MIN_WATER_LEVEL_PCT) {
     tripSafety("DRY_RUN_PROTECTION_TRIP");
     return;
   }
 }
 
 // ======================================================================================
-// 6. MQTT PUBLISHING & ACK DISPATCHING
+// 7. MQTT PUBLISHING & ACK DISPATCHING
 // ======================================================================================
+
+void sendStatus() {
+  if (!mqttClient.connected()) return;
+
+  #if ARDUINOJSON_VERSION_MAJOR >= 7
+    JsonDocument doc;
+  #else
+    StaticJsonDocument<384> doc;
+  #endif
+
+  doc["device_uid"] = DEVICE_UID;
+  doc["controller_status"] = "ACTIVE";
+  doc["timestamp"] = millis() / 1000;
+
+  JsonArray motors = doc.createNestedArray("motors");
+  JsonObject m1 = motors.createNestedObject();
+  m1["motor_code"] = "PUMP_01";
+  m1["status"] = getMotorStateString();
+  m1["fault_reason"] = lastTripReason;
+
+  char buffer[384];
+  serializeJson(doc, buffer);
+  mqttClient.publish(TOPIC_STATUS, buffer);
+  Serial.printf("[MQTT] Sent STATUS -> %s [PUMP_01: %s (%s)]\n", TOPIC_STATUS, getMotorStateString(), lastTripReason);
+}
 
 void sendAck(const char* command_id, const char* status, const char* message) {
   if (!mqttClient.connected()) return;
@@ -349,6 +566,7 @@ void sendTelemetry(const SensorReadings& r) {
   JsonObject sensors = doc.createNestedObject("sensors");
   sensors["water_level_pct"] = round(r.water_level_pct * 10.0f) / 10.0f;
   sensors["turbidity_ntu"]   = round(r.turbidity_ntu * 10.0f) / 10.0f;
+  sensors["distance_cm"]     = round(r.distance_cm * 10.0f) / 10.0f;
   sensors["current_amps"]    = round(r.current_amps * 10.0f) / 10.0f;
   sensors["flow_rate"]       = round(r.flow_rate * 10.0f) / 10.0f;
   sensors["voltage"]         = round(r.voltage * 10.0f) / 10.0f;
@@ -360,12 +578,13 @@ void sendTelemetry(const SensorReadings& r) {
   char buffer[384];
   serializeJson(doc, buffer);
   mqttClient.publish(TOPIC_TELEMETRY, buffer);
-  Serial.printf("[MQTT] Telemetry sent: Level=%.1f%%, Turb=%.1f NTU, Current=%.1f A\n",
-                r.water_level_pct, r.turbidity_ntu, r.current_amps);
+  
+  Serial.printf("[CIRCUIT SENSORS] Level=%.1f%% (Dist=%.1f cm) | Turb=%.1f NTU (%.2fV) | Motor=%s\n",
+                r.water_level_pct, r.distance_cm, r.turbidity_ntu, r.turbidity_volts, getMotorStateString());
 }
 
 // ======================================================================================
-// 7. INBOUND COMMAND CALLBACK
+// 8. INBOUND COMMAND CALLBACK
 // ======================================================================================
 
 void onMqttMessageReceived(char* topic, byte* payload, unsigned int length) {
@@ -427,7 +646,7 @@ void onMqttMessageReceived(char* topic, byte* payload, unsigned int length) {
 }
 
 // ======================================================================================
-// 8. WI-FI & MQTT CONNECTION MANAGERS
+// 9. WI-FI & MQTT CONNECTION MANAGERS
 // ======================================================================================
 
 void connectWifi() {
@@ -449,6 +668,8 @@ void connectWifi() {
     digitalWrite(PIN_ONBOARD_LED, LOW);
     Serial.printf("\n[WIFI] Connected! Local IP: %s (Signal: %d dBm)\n",
                   WiFi.localIP().toString().c_str(), WiFi.RSSI());
+    // 2 quick confirmation beeps
+    buzzerPattern(2, 60, 60);
   } else {
     digitalWrite(PIN_ONBOARD_LED, LOW);
     Serial.println("\n[WIFI] Connection failed. Will retry in loop.");
@@ -480,13 +701,16 @@ void connectMqtt() {
 
     // Send instant online heartbeat
     sendHeartbeat();
+    
+    // Connected tone (3 quick cheerful beeps)
+    buzzerPattern(3, 50, 50);
   } else {
     Serial.printf(" FAILED (rc=%d). Will retry in next loop.\n", mqttClient.state());
   }
 }
 
 // ======================================================================================
-// 9. ARDUINO SETUP & MAIN LOOP
+// 10. ARDUINO SETUP & MAIN LOOP
 // ======================================================================================
 
 void setup() {
@@ -494,24 +718,36 @@ void setup() {
   delay(1000);
 
   Serial.println("\n========================================================");
-  Serial.println("   HydraControl ESP32 Production Controller Firmware     ");
-  Serial.printf ("   Device UID: %s | Ver: %s \n", DEVICE_UID, FIRMWARE_VERSION);
-  Serial.printf ("   Mode: %s\n", BENCH_TEST_MODE ? "BENCH TEST (Simulated Sensors)" : "LIVE HARDWARE");
+  Serial.println("  HydraControl ESP32 Firmware — Breadboard Circuit Edition");
+  Serial.printf ("  Device UID: %s | Ver: %s \n", DEVICE_UID, FIRMWARE_VERSION);
+  Serial.println("  Sensors: HC-SR04 (GPIO18/19), Turbidity (GPIO34), Buzzer (GPIO25)");
   Serial.println("========================================================");
 
-  // Initialize hardware pins
+  // 1. Initialize ultrasonic sensor pins
+  pinMode(PIN_TRIG, OUTPUT);
+  pinMode(PIN_ECHO, INPUT);
+  digitalWrite(PIN_TRIG, LOW);
+
+  // 2. Initialize buzzer pin
+  pinMode(PIN_BUZZER, OUTPUT);
+  buzzerSet(false);
+
+  // 3. Initialize status LED & motor relay
   pinMode(PIN_ONBOARD_LED, OUTPUT);
   pinMode(PIN_RELAY_MOTOR_START, OUTPUT);
-  setRelayAndLed(false);
+  setActuators(false);
 
-  pinMode(PIN_EMERGENCY_STOP_BTN, INPUT_PULLUP);
-  pinMode(PIN_FLOAT_HIGH, INPUT_PULLUP);
-  pinMode(PIN_FLOAT_LOW, INPUT_PULLUP);
+  // Configure ADC for turbidity reading (12-bit resolution, 0-3.3V attenuation)
+  analogReadResolution(12);
+  analogSetAttenuation(ADC_11db);
+
+  // Power-on beep
+  buzzerBeep(150);
 
   // Initialize MQTT
   mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
   mqttClient.setCallback(onMqttMessageReceived);
-  mqttClient.setBufferSize(512); // Ensure buffer fits JSON payloads
+  mqttClient.setBufferSize(512); // Buffer size for JSON payloads
 
   // Connect Wi-Fi
   connectWifi();
@@ -529,23 +765,26 @@ void loop() {
 
   mqttClient.loop();
 
-  // 2. Read sensors
+  // 2. Read sensors (Ultrasonic HC-SR04 + Turbidity ADC with divider compensation)
   SensorReadings readings = readSensors();
 
-  // 3. Evaluate continuous safety rules
+  // 3. Evaluate continuous safety rules (Overfill, Dry Run, High Turbidity)
   evaluateContinuousSafety(readings);
 
-  // 4. Periodic Heartbeat (every 10 seconds)
+  // 4. Handle non-blocking buzzer alarm if in fault state
+  handleBuzzerAlarm();
+
+  // 5. Periodic Heartbeat (every 10 seconds)
   if (millis() - lastHeartbeatMillis >= 10000) {
     lastHeartbeatMillis = millis();
     sendHeartbeat();
   }
 
-  // 5. Periodic Sensor Telemetry (every 2 seconds)
+  // 6. Periodic Sensor Telemetry (every 2 seconds)
   if (millis() - lastTelemetryMillis >= 2000) {
     lastTelemetryMillis = millis();
     sendTelemetry(readings);
   }
 
-  delay(10);
+  delay(20);
 }

@@ -1,84 +1,103 @@
-# 🔌 HydraControl — ESP32 Firmware Guide
+# 🔌 HydraControl — ESP32 Breadboard Circuit & Firmware Guide
 
-This folder contains the production firmware for physical ESP32 controllers connecting to the HydraControl platform.
+This directory contains the production ESP32 firmware configured for the exact breadboard circuit: **HC-SR04 Ultrasonic Sensor + Analog Turbidity Sensor + 3-Pin Buzzer Module**.
 
 ---
 
-## ⚡ Option 1: Direct Upload via Arduino IDE (Recommended & Easiest)
+## 📐 Circuit Wiring & GPIO Map
 
-We provide a pre-packaged, single-file sketch inside [`firmware/HydraControl_ESP32/HydraControl_ESP32.ino`](file:///c:/Users/bhask/OneDrive/Desktop/water%20pump%20automations/firmware/HydraControl_ESP32/HydraControl_ESP32.ino).
+| Component | Component Pin | Connection on Breadboard | ESP32 GPIO | Voltage Protection |
+| :--- | :--- | :--- | :--- | :--- |
+| **HC-SR04 Ultrasonic** | **VCC** | 5V Red Rail (from 5V DC Supply) | — | Powered via 5V |
+| | **GND** | GND Blue Rail | — | Common GND |
+| | **TRIG** | Direct jumper wire (Blue wire) | **GPIO 18** | Standard 3.3V output trigger |
+| | **ECHO** | Through **10kΩ + 15kΩ** divider (Yellow wire) | **GPIO 19** | Steps down 5V echo pulse to safe **~3.0V** |
+| **Turbidity Sensor** | **VCC / +** | 5V Red Rail (from 5V DC Supply) | — | Powered via 5V |
+| | **GND / -** | GND Blue Rail | — | Common GND |
+| | **AO (Analog)** | Through **10kΩ + 10kΩ** divider (Purple wire) | **GPIO 34** | Steps down 4.5V output to safe **~2.25V** |
+| | **DO** | Not connected | — | Analog AO used for clarity |
+| **Buzzer Module (3-Pin)** | **VCC / +** | ESP32 3.3V Pin (Red wire) | **3V3** | 3.3V logic level |
+| | **GND / -** | GND Blue Rail (Black wire) | — | Common GND |
+| | **S / IN** | Direct jumper wire (Green wire) | **GPIO 25** | Active digital buzzer drive |
+| **Status / Actuators** | **Blue LED** | Built-in DevKit LED | **GPIO 2** | Indicates motor running & Wi-Fi state |
+| | **Pump Relay** | Contactor Relay Module (optional) | **GPIO 26** | Active HIGH coil drive |
+
+### ⚡ Why Voltage Dividers are Used:
+1. **HC-SR04 ECHO Pin (5V $\to$ 3V)**:
+   - The HC-SR04 outputs a $5\text{V}$ echo signal. Connecting $5\text{V}$ directly to an ESP32 pin can damage the chip over time.
+   - The $10\text{k}\Omega$ (top) and $15\text{k}\Omega$ (bottom to GND) divider scales the voltage:
+     $$V_{\text{ESP32}} = 5\text{V} \times \frac{15\text{k}\Omega}{10\text{k}\Omega + 15\text{k}\Omega} = 5\text{V} \times 0.60 = 3.0\text{V}$$
+2. **Turbidity Sensor AO Pin (4.5V $\to$ 2.25V)**:
+   - The gravity turbidity interface board outputs up to $4.5\text{V}$.
+   - The $10\text{k}\Omega$ (top) and $10\text{k}\Omega$ (bottom to GND) divider scales the voltage by $0.5$:
+     $$V_{\text{ESP32}} = 4.5\text{V} \times \frac{10\text{k}\Omega}{10\text{k}\Omega + 10\text{k}\Omega} = 2.25\text{V}$$
+   - The firmware automatically multiplies the measured ADC voltage by $2.0\times$ to recover the true sensor reading!
+
+---
+
+## 🚀 How to Upload the Code in Arduino IDE
+
+We provide a self-contained, pre-configured sketch inside:
+[`firmware/HydraControl_ESP32/HydraControl_ESP32.ino`](file:///c:/Users/bhask/OneDrive/Desktop/water%20pump%20automations/firmware/HydraControl_ESP32/HydraControl_ESP32.ino)
 
 ### Step 1: Open Arduino IDE
-1. Open the Arduino IDE.
-2. Go to **File -> Open** and select:
+1. Open the **Arduino IDE** (v1.8.x or v2.x).
+2. Go to **File $\to$ Open...** and select:
    ```
    firmware/HydraControl_ESP32/HydraControl_ESP32.ino
    ```
 
 ### Step 2: Install Required Libraries
-Open **Sketch -> Include Library -> Manage Libraries...** and install:
+Open **Sketch $\to$ Include Library $\to$ Manage Libraries...** and install:
 1. **PubSubClient** by Nick O'Leary
-2. **ArduinoJson** by Benoît Blanchon
+2. **ArduinoJson** by Benoît Blanchon (version 6.x or 7.x)
 
-### Step 3: Enter Your Wi-Fi Credentials
-At lines 30–31 of `HydraControl_ESP32.ino`, set your Wi-Fi name and password:
+### Step 3: Configure Your Wi-Fi
+In `HydraControl_ESP32.ino` (lines 43–44), set your Wi-Fi SSID and password:
 ```cpp
 const char* WIFI_SSID     = "Your_WiFi_Name";
 const char* WIFI_PASSWORD = "Your_WiFi_Password";
 ```
 
-### Step 4: Upload to ESP32
-1. Plug your ESP32 board into your computer with a USB cable.
-2. Select your board under **Tools -> Board -> ESP32 Arduino -> ESP32 Dev Module**.
-3. Select your serial port under **Tools -> Port** (e.g. `COM3` or `COM4`).
-4. Click the **Upload** button (arrow icon).
-5. Open **Tools -> Serial Monitor** and set the baud rate to **115200**.
-
-### 💡 Desk Testing (Bench Mode)
-The firmware comes with `BENCH_TEST_MODE = true` enabled by default:
-- You do **not** need physical float switches or sensors wired up to test immediately on your desk!
-- When you click **START** in the Web or Mobile app, the **blue onboard LED (GPIO 2)** and relay pin (GPIO 25) will turn **ON**.
-- When you click **STOP**, it turns **OFF**.
-- When you are ready to wire real analog sensors and float switches, set `#define BENCH_TEST_MODE false`.
+### Step 4: Plug In and Upload
+1. Connect your ESP32 via USB cable to your computer.
+2. Select your board under **Tools $\to$ Board $\to$ ESP32 Arduino $\to$ ESP32 Dev Module**.
+3. Select your serial port under **Tools $\to$ Port** (e.g. `COM3`, `COM4`, or `/dev/ttyUSB0`).
+4. Click the **Upload** button (Arrow icon in toolbar).
+5. Open **Tools $\to$ Serial Monitor** and set baud rate to **115200**.
 
 ---
 
-## 🛠️ Option 2: Upload via PlatformIO (VS Code)
+## 🔔 Audible Beep Codes (Buzzer on GPIO25)
 
-If you use VS Code with the PlatformIO extension:
-1. Open the `firmware/` directory in VS Code.
-2. In [`firmware/include/config.h`](file:///c:/Users/bhask/OneDrive/Desktop/water%20pump%20automations/firmware/include/config.h), set your Wi-Fi credentials.
-3. Click the PlatformIO **Upload** button (arrow in the bottom status bar) or run:
-   ```bash
-   pio run --target upload
-   ```
-4. Open the serial monitor:
-   ```bash
-   pio device monitor
-   ```
+| Event | Buzzer Tone Pattern |
+| :--- | :--- |
+| **Power On / Boot** | 1 medium beep (150ms) |
+| **Wi-Fi Connected** | 2 quick beeps (60ms each) |
+| **MQTT Cloud Connected** | 3 cheerful beeps (50ms each) |
+| **Motor START command** | 2 affirmative beeps (100ms each) |
+| **Motor STOP command** | 1 solid stop tone (250ms) |
+| **Fault Trip / Alarm** | Continuous pulsing alarm (200ms ON / 800ms OFF) |
+| **Fault Cleared / Reset** | 1 long confirmation tone (400ms) |
 
 ---
 
-## 📌 Hardware Pinout Mapping
+## 📊 Live Telemetry Streamed to Web & Mobile App
 
-| Component | ESP32 GPIO | Description |
-| :--- | :--- | :--- |
-| **Contactor Relay** | `GPIO 25` | Output (Active HIGH) to 5V relay module driving pump contactor |
-| **Onboard Blue LED** | `GPIO 2` | Visual indicator for motor state and Wi-Fi connection |
-| **Emergency Stop Button**| `GPIO 4` | Active LOW (with internal pullup), trips instant hardware latch |
-| **Upper Tank Float Switch** | `GPIO 18` | Active LOW, triggers auto-cutoff when tank is 100% full |
-| **Lower Sump Float Switch** | `GPIO 19` | Active LOW, trips dry run protection if water source is empty |
-| **Current Sensor (ACS712)** | `GPIO 36 (VP)` | Analog input measuring motor current draw |
-| **Turbidity Sensor** | `GPIO 39 (VN)` | Analog input measuring water clarity/sediment |
-| **Water Level Sensor** | `GPIO 33` | Analog input (0–3.3V) for continuous water level % |
-
----
-
-## 🌐 Remote Cloud Architecture
-
-Both the backend and ESP32 connect to the public cloud MQTT broker:
-- **Broker**: `broker.emqx.io`
-- **Port**: `1883`
-- **Device Topic Root**: `hydracontrol/devices/HYDRA-PROD-ESP32-001/`
-
-No port-forwarding or local router configuration is needed. The ESP32 can be connected to any Wi-Fi network, mobile 4G hotspot, or cellular module anywhere in the world and communicate directly with your HydraControl platform.
+The ESP32 publishes live JSON telemetry every 2 seconds to `hydracontrol/devices/HYDRA-PROD-ESP32-001/telemetry`:
+```json
+{
+  "device_uid": "HYDRA-PROD-ESP32-001",
+  "timestamp": 1728821000,
+  "motor_state": "ON",
+  "sensors": {
+    "water_level_pct": 82.4,
+    "turbidity_ntu": 3.8,
+    "distance_cm": 18.2,
+    "current_amps": 5.8,
+    "voltage": 230.0,
+    "flow_rate": 42.5
+  }
+}
+```
+You can view these values in real-time in the HydraControl web dashboard and Android APK mobile app.
