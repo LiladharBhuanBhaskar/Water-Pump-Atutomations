@@ -91,12 +91,12 @@ class Sensor(BaseModel):
     telemetry_readings: Mapped[list["TelemetryReading"]] = relationship(
         "TelemetryReading",
         back_populates="sensor",
-        lazy="selectin"
+        lazy="select"
     )
     automation_rules: Mapped[list["AutomationRule"]] = relationship(
         "AutomationRule",
         back_populates="sensor",
-        lazy="selectin"
+        lazy="select"
     )
 
     def __repr__(self) -> str:
