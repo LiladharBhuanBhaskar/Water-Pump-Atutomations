@@ -59,6 +59,8 @@ async def update_station_settings(
         settings.timezone = req.timezone
     if req.auto_stop_on_tank_full is not None:
         settings.auto_stop_on_tank_full = req.auto_stop_on_tank_full
+    if req.auto_stop_on_turbidity is not None:
+        settings.auto_stop_on_turbidity = req.auto_stop_on_turbidity
     if req.water_level_threshold is not None:
         settings.water_level_threshold = req.water_level_threshold
     if req.turbidity_threshold is not None:
