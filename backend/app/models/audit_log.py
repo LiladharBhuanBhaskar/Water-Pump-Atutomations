@@ -140,25 +140,25 @@ class AuditLog(BaseModel):
     organization: Mapped[Optional["Organization"]] = relationship(
         "Organization",
         back_populates="audit_logs",
-        lazy="selectin"
+        lazy="select"
     )
     
     site: Mapped[Optional["Site"]] = relationship(
         "Site",
         back_populates="audit_logs",
-        lazy="selectin"
+        lazy="select"
     )
     
     station: Mapped[Optional["Station"]] = relationship(
         "Station",
         back_populates="audit_logs",
-        lazy="selectin"
+        lazy="select"
     )
     
     actor_user: Mapped[Optional["User"]] = relationship(
         "User",
         back_populates="audit_logs",
-        lazy="selectin"
+        lazy="select"
     )
 
     def __repr__(self) -> str:

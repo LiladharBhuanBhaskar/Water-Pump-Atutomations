@@ -52,7 +52,7 @@ class TelemetryReading(BaseModel):
     sensor: Mapped["Sensor"] = relationship(
         "Sensor",
         back_populates="telemetry_readings",
-        lazy="selectin"
+        lazy="select"
     )
 
     # Composite index for querying history
