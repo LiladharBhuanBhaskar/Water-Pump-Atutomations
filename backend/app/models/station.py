@@ -106,7 +106,7 @@ class Station(BaseModel):
     automation_rules: Mapped[list["AutomationRule"]] = relationship(
         "AutomationRule",
         back_populates="station",
-        lazy="selectin"
+        lazy="select"
     )
     settings: Mapped[Optional["StationSettings"]] = relationship(
         "StationSettings",
@@ -119,7 +119,7 @@ class Station(BaseModel):
     audit_logs: Mapped[list["AuditLog"]] = relationship(
         "AuditLog",
         back_populates="station",
-        lazy="selectin"
+        lazy="select"
     )
 
     def __repr__(self) -> str:
