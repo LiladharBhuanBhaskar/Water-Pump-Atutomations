@@ -207,7 +207,10 @@ async def process_telemetry_payload(device_uid: str, payload: Any) -> int:
         if saved_count > 0:
             await session.commit()
             logger.debug(f"Persisted {saved_count} telemetry readings for controller '{device_uid}'")
+        elif session.dirty or session.new or session.deleted:
+            await session.commit()
 
+        if saved_count > 0:
             # 1. Real-time WebSocket broadcasting for telemetry
             for p in persisted_items:
                 try:
@@ -226,21 +229,79 @@ async def process_telemetry_payload(device_uid: str, payload: Any) -> int:
                 except Exception as e:
                     logger.error(f"Error streaming telemetry for '{device_uid}': {e}")
 
+            # 1b. Motor State Reconciliation from telemetry payload (e.g. ESP32 hardware reports motor_state: "OFF")
+            hw_motor_state = payload.get("motor_state") if isinstance(payload, dict) else None
+            if hw_motor_state and controller.motors:
+                hw_upper = str(hw_motor_state).strip().upper()
+                target_status = None
+                if hw_upper in ("OFF", "STOPPED", "IDLE"):
+                    target_status = MotorStatus.OFF
+                elif hw_upper in ("ON", "RUNNING"):
+                    target_status = MotorStatus.ON
+                elif hw_upper in ("FAULT", "FAULT_LOCKED"):
+                    target_status = MotorStatus.FAULT
+
+                if target_status is not None:
+                    for motor in controller.motors:
+                        if motor.status != target_status:
+                            old_status = motor.status
+                            ev_to_fire = None
+                            if target_status == MotorStatus.OFF and old_status in (MotorStatus.ON, MotorStatus.STARTING, MotorStatus.STOPPING):
+                                ev_to_fire = MotorStateEvent.STATUS_OFF
+                            elif target_status == MotorStatus.ON and old_status in (MotorStatus.OFF, MotorStatus.STARTING):
+                                ev_to_fire = MotorStateEvent.STATUS_ON
+                            elif target_status == MotorStatus.FAULT and old_status != MotorStatus.FAULT:
+                                ev_to_fire = MotorStateEvent.SAFETY_TRIP
+
+                            if ev_to_fire:
+                                t_res = transition_motor_state(
+                                    old_status,
+                                    ev_to_fire,
+                                    {"is_reconciliation": True, "error_message": payload.get("fault_reason") or f"Controller telemetry state sync: {hw_upper}"}
+                                )
+                                if t_res.is_valid:
+                                    motor.status = t_res.next_state
+                                    session.add(motor)
+                                    if t_res.event_type:
+                                        evt = MotorEvent(
+                                            id=uuid.uuid4(),
+                                            motor_id=motor.id,
+                                            event_type=t_res.event_type,
+                                            source=MotorEventSource.CONTROLLER,
+                                            occurred_at=now,
+                                            description=t_res.reason,
+                                            event_payload=payload if isinstance(payload, dict) else {},
+                                        )
+                                        session.add(evt)
+                                    await session.commit()
+                                    await stream_motor_state(
+                                        motor_id=motor.id,
+                                        motor_code=motor.motor_code,
+                                        device_uid=device_uid,
+                                        status=motor.status,
+                                        organization_id=org_id,
+                                        site_id=site_id,
+                                        station_id=station_id,
+                                        previous_status=old_status,
+                                    )
+
             # 2. Edge Safety Rules Evaluation & Motor State Engine Integration
             for sensor, val, unit_str, reading_time in safety_trips_to_evaluate:
                 for motor in controller.motors:
-                    if motor.status != MotorStatus.ON:
+                    if motor.status not in (MotorStatus.ON, MotorStatus.STARTING):
                         continue
 
                     # Domain 1: Tank Level Safety (Phase 12 / P12-T02)
                     if sensor.sensor_type == SensorType.WATER_LEVEL:
                         tank_type = TankType.SUMP if "sump" in sensor.sensor_code.lower() or "source" in sensor.sensor_code.lower() else TankType.OVERHEAD
+                        cfg_auto_stop = station_settings.auto_stop_on_tank_full if station_settings else True
+                        is_hard_full = (val >= 95.0)
                         tank_eval = TankSafetyService.evaluate_tank_safety(
                             level_value=val,
                             unit=unit_str,
                             tank_type=tank_type,
                             high_threshold_pct=(float(station_settings.water_level_threshold) if (station_settings and station_settings.water_level_threshold is not None) else None),
-                            auto_stop_enabled=(station_settings.auto_stop_on_tank_full if station_settings else False),
+                            auto_stop_enabled=(cfg_auto_stop or is_hard_full),
                         )
                         if tank_eval.safety_state == TankSafetyState.HIGH_TRIP:
                             # Auto-stop on full overhead tank
@@ -330,46 +391,52 @@ async def process_telemetry_payload(device_uid: str, payload: Any) -> int:
                     elif sensor.sensor_type == SensorType.TURBIDITY:
                         cfg_limit = float(station_settings.turbidity_threshold) if (station_settings and station_settings.turbidity_threshold is not None) else None
                         turb_eval = evaluate_turbidity(turbidity_ntu=val, station_threshold_ntu=cfg_limit)
-                        if not turb_eval.is_safe and turb_eval.hard_cutoff_exceeded:
-                            t_res = transition_motor_state(
-                                current_state=motor.status,
-                                event=MotorStateEvent.SAFETY_TRIP,
-                                context={"error_message": f"Turbidity Safety Trip: Water turbidity ({val:.1f} NTU) exceeds limit (25 NTU)"}
-                            )
-                            if t_res.is_valid:
-                                motor.status = t_res.next_state
-                                session.add(motor)
-                                event_entry = MotorEvent(
-                                    id=uuid.uuid4(),
-                                    motor_id=motor.id,
-                                    event_type=MotorEventType.FAULT,
-                                    source=MotorEventSource.SENSOR,
-                                    occurred_at=reading_time,
-                                    description=f"Turbidity Contamination Trip ({val:.1f} NTU > 25 NTU)",
-                                    event_payload={"turbidity_ntu": val, "reason": "TURBIDITY_TRIP"},
+                        cfg_auto_stop_turb = getattr(station_settings, "auto_stop_on_turbidity", True) if station_settings else True
+                        if cfg_auto_stop_turb is None:
+                            cfg_auto_stop_turb = True
+
+                        if not turb_eval.is_safe and (turb_eval.hard_cutoff_exceeded or (cfg_limit and val >= cfg_limit)):
+                            if cfg_auto_stop_turb or turb_eval.hard_cutoff_exceeded:
+                                # Operational Auto-Cutoff (Water Quality Protection) — stops pump cleanly into OFF (Standby), NOT a hardware FAULT
+                                t_res = transition_motor_state(
+                                    current_state=motor.status,
+                                    event=MotorStateEvent.CMD_STOP,
+                                    context={"error_message": f"Auto-Cutoff: Water turbidity ({val:.1f} NTU) exceeds limit ({cfg_limit or 25:.1f} NTU)"}
                                 )
-                                session.add(event_entry)
-                                await session.commit()
-                                await stream_motor_state(
-                                    motor_id=motor.id,
-                                    motor_code=motor.motor_code,
-                                    device_uid=device_uid,
-                                    status=motor.status,
-                                    organization_id=org_id,
-                                    site_id=site_id,
-                                    station_id=station_id,
-                                )
-                                await stream_safety_alert(
-                                    event_type="TURBIDITY_TRIP",
-                                    motor_id=motor.id,
-                                    motor_code=motor.motor_code,
-                                    device_uid=device_uid,
-                                    description=f"Severe Water Contamination ({val:.1f} NTU): Pump tripped instantly.",
-                                    payload={"turbidity_ntu": val},
-                                    organization_id=org_id,
-                                    site_id=site_id,
-                                    station_id=station_id,
-                                )
+                                if t_res.is_valid:
+                                    motor.status = t_res.next_state
+                                    session.add(motor)
+                                    event_entry = MotorEvent(
+                                        id=uuid.uuid4(),
+                                        motor_id=motor.id,
+                                        event_type=MotorEventType.STOPPED,
+                                        source=MotorEventSource.AUTOMATION,
+                                        occurred_at=reading_time,
+                                        description=f"Auto-Cutoff on High Turbidity ({val:.1f} NTU)",
+                                        event_payload={"turbidity_ntu": val, "reason": "TURBIDITY_CUTOFF"},
+                                    )
+                                    session.add(event_entry)
+                                    await session.commit()
+                                    await stream_motor_state(
+                                        motor_id=motor.id,
+                                        motor_code=motor.motor_code,
+                                        device_uid=device_uid,
+                                        status=motor.status,
+                                        organization_id=org_id,
+                                        site_id=site_id,
+                                        station_id=station_id,
+                                    )
+                                    await stream_safety_alert(
+                                        event_type="TURBIDITY_CUTOFF",
+                                        motor_id=motor.id,
+                                        motor_code=motor.motor_code,
+                                        device_uid=device_uid,
+                                        description=f"Water Quality Auto-Cutoff ({val:.1f} NTU): Pump stopped safely to protect water tank.",
+                                        payload={"turbidity_ntu": val},
+                                        organization_id=org_id,
+                                        site_id=site_id,
+                                        station_id=station_id,
+                                    )
 
                     # Domain 3: Flow Protection & Dry Run (Phase 14 / P14-T02)
                     elif sensor.sensor_type == SensorType.FLOW:
