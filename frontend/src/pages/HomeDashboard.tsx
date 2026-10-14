@@ -21,6 +21,7 @@ import {
   Square,
   Plus,
   Sliders,
+  RotateCcw,
 } from 'lucide-react';
 import {
   Site,
@@ -146,13 +147,14 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
   onAdminSwitch,
 }) => {
   const { user, logout, isOperator } = useAuth();
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const [activeTab, setActiveTab] = useState<MobileTab>('HOME');
   const [activeServiceScreen, setActiveServiceScreen] = useState<ServiceViewType>(null);
 
   const [site, setSite] = useState<Site | null>(null);
   const [station, setStation] = useState<Station | null>(null);
   const [controller, setController] = useState<Controller | null>(null);
+  const [controllersList, setControllersList] = useState<Controller[]>([]);
   const [motor, setMotor] = useState<Motor | null>(null);
   const [motorsList, setMotorsList] = useState<Motor[]>([]);
   const [recentEvents, setRecentEvents] = useState<MotorEventResponse[]>([]);
@@ -173,6 +175,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
   const [sumpDryRunThreshold, setSumpDryRunThreshold] = useState<number>(10);
   const [turbidityStopThreshold, setTurbidityStopThreshold] = useState<number>(25);
   const [autoStopTankFull, setAutoStopTankFull] = useState<boolean>(true);
+  const [autoStopTurbidity, setAutoStopTurbidity] = useState<boolean>(true);
   const [offlineAlertEnabled, setOfflineAlertEnabled] = useState<boolean>(true);
   const [isSavingSettings, setIsSavingSettings] = useState<boolean>(false);
 
@@ -200,6 +203,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
   const siteRef = React.useRef<Site | null>(null);
   const stationRef = React.useRef<Station | null>(null);
   const controllerRef = React.useRef<Controller | null>(null);
+  const controllersListRef = React.useRef<Controller[]>([]);
   const motorsListRef = React.useRef<Motor[]>([]);
   const motorRef = React.useRef<Motor | null>(null);
   const isFetchingRef = React.useRef<boolean>(false);
@@ -214,6 +218,9 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
   useEffect(() => {
     controllerRef.current = controller;
   }, [controller]);
+  useEffect(() => {
+    controllersListRef.current = controllersList;
+  }, [controllersList]);
   useEffect(() => {
     motorsListRef.current = motorsList;
   }, [motorsList]);
@@ -250,18 +257,27 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
 
         const controllers = await api.getControllers(curStation.id);
         if (!controllers || controllers.length === 0) return;
+        setControllersList(controllers);
+        controllersListRef.current = controllers;
         curController = controllers[0];
         setController(curController);
         controllerRef.current = curController;
 
-        const motorResults = await Promise.all(controllers.map((c) => api.getMotors(c.id)));
-        curMotors = motorResults.flat();
-        if (curMotors && curMotors.length > 0) {
-          setMotorsList(curMotors);
-          motorsListRef.current = curMotors;
+        const stationMotors = await api.getMotors(undefined, curStation.id);
+        const resolvedMotors = stationMotors && stationMotors.length > 0 ? stationMotors : await api.getMotors();
+        if (resolvedMotors && resolvedMotors.length > 0) {
+          curMotors = resolvedMotors;
+          setMotorsList(resolvedMotors);
+          motorsListRef.current = resolvedMotors;
           if (!motorRef.current) {
-            setMotor(curMotors[0]);
-            motorRef.current = curMotors[0];
+            setMotor(resolvedMotors[0]);
+            motorRef.current = resolvedMotors[0];
+            const matchingCtrl = controllers.find((c) => c.id === resolvedMotors[0].controller_id);
+            if (matchingCtrl) {
+              setController(matchingCtrl);
+              controllerRef.current = matchingCtrl;
+              curController = matchingCtrl;
+            }
           }
         }
       }
@@ -330,6 +346,9 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
         if (s.auto_stop_on_tank_full !== undefined && s.auto_stop_on_tank_full !== null) {
           setAutoStopTankFull(Boolean(s.auto_stop_on_tank_full));
         }
+        if (s.auto_stop_on_turbidity !== undefined && s.auto_stop_on_turbidity !== null) {
+          setAutoStopTurbidity(Boolean(s.auto_stop_on_turbidity));
+        }
         if (s.offline_alert_enabled !== undefined && s.offline_alert_enabled !== null) {
           setOfflineAlertEnabled(Boolean(s.offline_alert_enabled));
         }
@@ -346,6 +365,55 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
       } else {
         setActiveTimer(null);
         setRemainingSeconds(0);
+      }
+
+      // Re-fetch fresh motor status & sensor readings on each cycle
+      try {
+        const stationId = curStation?.id;
+        const freshMotors = await api.getMotors(undefined, stationId);
+        const resolvedMotors = freshMotors && freshMotors.length > 0 ? freshMotors : await api.getMotors();
+        if (resolvedMotors && resolvedMotors.length > 0) {
+          setMotorsList(resolvedMotors);
+          motorsListRef.current = resolvedMotors;
+          const updatedCur = resolvedMotors.find((m) => m.id === (motorRef.current?.id || resolvedMotors[0].id)) || resolvedMotors[0];
+          setMotor(updatedCur);
+          motorRef.current = updatedCur;
+
+          if (controllersListRef.current.length > 0) {
+            const matchingCtrl = controllersListRef.current.find((c) => c.id === updatedCur.controller_id);
+            if (matchingCtrl && matchingCtrl.id !== controllerRef.current?.id) {
+              setController(matchingCtrl);
+              controllerRef.current = matchingCtrl;
+              curController = matchingCtrl;
+            }
+          }
+        }
+
+        const activeCtrl = controllerRef.current || curController;
+        if (activeCtrl) {
+          const sensors = await api.getSensors(activeCtrl.id);
+          if (sensors && sensors.length > 0) {
+            const levelSensors = sensors.filter(s => {
+              const sc = s.sensor_code.toUpperCase();
+              return s.sensor_type === 'WATER_LEVEL' || sc.includes('LEVEL') || sc.includes('TANK');
+            });
+            await Promise.all(
+              levelSensors.map(async (s) => {
+                const sc = s.sensor_code.toUpperCase();
+                const latest = await api.getSensorLatest(s.id);
+                if (latest && latest.value !== undefined && latest.value !== null) {
+                  if (sc.includes('SUMP') || sc.includes('SOURCE')) {
+                    setSumpLevel(Number(latest.value));
+                  } else {
+                    setTankLevel(Number(latest.value));
+                  }
+                }
+              })
+            );
+          }
+        }
+      } catch (fetchErr) {
+        console.debug('Background motor/sensor poll error:', fetchErr);
       }
     } catch (err) {
       console.error('Failed to load station telemetry:', err);
@@ -409,37 +477,119 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
     if (!latestWsEvent) return;
 
     const ev = latestWsEvent as any;
-    if (ev.event === 'TELEMETRY' || ev.event === 'MOTOR_STATE' || ev.type === 'TELEMETRY_UPDATED') {
+    if (ev.event === 'TELEMETRY' || ev.event === 'MOTOR_STATE' || ev.type === 'TELEMETRY_UPDATED' || ev.event === 'SAFETY_ALERT') {
       const payload = ev.payload || ev || {};
-      if (payload.motor_id && motorRef.current && payload.motor_id === motorRef.current.id) {
-        if (payload.status) {
+
+      // Match target motor by ID, motor_code, or device_uid
+      const isTargetMotor =
+        (payload.motor_id && motorRef.current && payload.motor_id === motorRef.current.id) ||
+        (payload.motor_code && motorRef.current && payload.motor_code.toUpperCase() === motorRef.current.motor_code.toUpperCase()) ||
+        (payload.device_uid && controllerRef.current && payload.device_uid === controllerRef.current.device_uid);
+
+      if (payload.status) {
+        if (isTargetMotor) {
           setMotor((prev) => (prev ? { ...prev, status: payload.status } : null));
         }
+        setMotorsList((prev) =>
+          prev.map((m) =>
+            (payload.motor_id && m.id === payload.motor_id) ||
+            (payload.motor_code && m.motor_code.toUpperCase() === payload.motor_code.toUpperCase())
+              ? { ...m, status: payload.status }
+              : m
+          )
+        );
       }
-      if (payload.current_a !== undefined) setCurrentAmps(payload.current_a);
-      if (payload.voltage_v !== undefined) setVoltage(payload.voltage_v);
-      if (payload.power_kw !== undefined) setPowerKw(payload.power_kw);
-      if (payload.flow_rate_lpm !== undefined) setFlowRateLpm(payload.flow_rate_lpm);
-      if (payload.tank_level !== undefined) setTankLevel(payload.tank_level);
-      if (payload.sump_level !== undefined) setSumpLevel(payload.sump_level);
-      if (payload.turbidity_ntu !== undefined) setTurbidity(payload.turbidity_ntu);
-      if (payload.ph !== undefined) setPh(payload.ph);
 
-      debouncedSync(400);
+      // Check direct telemetry keys
+      if (payload.current_a !== undefined) setCurrentAmps(Number(payload.current_a));
+      if (payload.voltage_v !== undefined) setVoltage(Number(payload.voltage_v));
+      if (payload.power_kw !== undefined) setPowerKw(Number(payload.power_kw));
+      if (payload.flow_rate_lpm !== undefined) setFlowRateLpm(Number(payload.flow_rate_lpm));
+      if (payload.tank_level !== undefined) setTankLevel(Number(payload.tank_level));
+      if (payload.sump_level !== undefined) setSumpLevel(Number(payload.sump_level));
+      if (payload.turbidity_ntu !== undefined) setTurbidity(Number(payload.turbidity_ntu));
+      if (payload.ph !== undefined) setPh(Number(payload.ph));
+
+      // Support generic sensor_code mapping from backend stream_telemetry
+      if (payload.sensor_code && payload.value !== undefined) {
+        const sc = String(payload.sensor_code).toUpperCase();
+        if (sc.includes('SUMP') || sc.includes('SOURCE')) {
+          setSumpLevel(Number(payload.value));
+        } else if (sc.includes('LEVEL') || sc.includes('TANK')) {
+          setTankLevel(Number(payload.value));
+        } else if (sc.includes('TURB')) {
+          setTurbidity(Number(payload.value));
+        } else if (sc.includes('CURR')) {
+          setCurrentAmps(Number(payload.value));
+        } else if (sc.includes('VOLT')) {
+          setVoltage(Number(payload.value));
+        } else if (sc.includes('FLOW')) {
+          setFlowRateLpm(Number(payload.value));
+        }
+      }
+
+      // Safety alert / Tank full notification
+      if (ev.event === 'SAFETY_ALERT' || payload.event_type === 'TANK_FULL' || payload.reason === 'TANK_FULL') {
+        setToastMessage('⚠️ Auto-Stop: Overhead Tank Full (Pump Auto-Cutoff)');
+        audioAlert.testSound('WARNING');
+        setTimeout(() => setToastMessage(null), 4000);
+      }
+
+      debouncedSync(300);
     }
   }, [latestWsEvent, debouncedSync]);
 
   const handleSelectMotor = (selectedMotor: Motor) => {
     setMotor(selectedMotor);
     motorRef.current = selectedMotor;
+    const matchingCtrl = controllersListRef.current.find((c) => c.id === selectedMotor.controller_id);
+    if (matchingCtrl) {
+      setController(matchingCtrl);
+      controllerRef.current = matchingCtrl;
+    }
     setToastMessage(`Switched active control to ${selectedMotor.name}`);
     setTimeout(() => setToastMessage(null), 2500);
     debouncedSync(100);
   };
 
+  // Reset Latched Fault on Motor to Ready Standby (OFF)
+  const handleResetMotor = async (targetMotorId?: string) => {
+    const mId = targetMotorId || motor?.id;
+    if (!mId || !isOperator) return;
+    setIsProcessing(true);
+    const targetMotor = motorsList.find((m) => m.id === mId) || motor;
+    const prevStatus = targetMotor?.status;
+    setMotorsList((prev) => prev.map((m) => (m.id === mId ? { ...m, status: 'OFF' } : m)));
+    if (motor && motor.id === mId) {
+      setMotor({ ...motor, status: 'OFF' });
+    }
+
+    try {
+      await api.resetMotor(mId);
+      setToastMessage(`Fault cleared for ${targetMotor?.name || 'Pump'}! Motor returned to standby.`);
+      audioAlert.testSound('SUCCESS');
+      setTimeout(() => setToastMessage(null), 3000);
+      await loadData(false);
+    } catch (err: any) {
+      if (prevStatus) {
+        setMotorsList((prev) => prev.map((m) => (m.id === mId ? { ...m, status: prevStatus } : m)));
+        if (motor && motor.id === mId) setMotor({ ...motor, status: prevStatus });
+      }
+      setToastMessage(err.message || 'Failed to clear fault');
+      setTimeout(() => setToastMessage(null), 3500);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   // Start / Stop Power Action with Scheduled Closing Duration Support
   const handlePowerToggle = async () => {
     if (!motor || !isOperator) return;
+
+    if (motor.status === 'FAULT') {
+      await handleResetMotor(motor.id);
+      return;
+    }
 
     if (isMotorRunning) {
       // Direct instant stop
@@ -626,6 +776,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
         water_level_threshold: Number(tankStopThreshold),
         turbidity_threshold: Number(turbidityStopThreshold),
         auto_stop_on_tank_full: Boolean(autoStopTankFull),
+        auto_stop_on_turbidity: Boolean(autoStopTurbidity),
         offline_alert_enabled: Boolean(offlineAlertEnabled),
       });
       setToastMessage('✓ Operational Thresholds & Safety Rules Saved!');
@@ -928,6 +1079,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               onSelectMotor={handleSelectMotor}
               isProcessing={isProcessing}
               onPowerToggle={handlePowerToggle}
+              onResetMotor={(mId) => handleResetMotor(mId)}
               onOpenStartModal={() => setIsStartModalOpen(true)}
               currentAmps={currentAmps}
               voltage={voltage}
@@ -942,10 +1094,36 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               onBack={() => setActiveServiceScreen(null)}
               tankLevel={tankLevel}
               tankStopThreshold={tankStopThreshold}
+              autoStopTankFull={autoStopTankFull}
+              onToggleAutoStopTankFull={async (val) => {
+                setAutoStopTankFull(val);
+                if (station) {
+                  try {
+                    await api.updateStationSettings(station.id, { auto_stop_on_tank_full: val });
+                    setToastMessage(`✓ Tank Overflow Cutoff: ${val ? 'ENABLED' : 'DISABLED'}`);
+                    setTimeout(() => setToastMessage(null), 3000);
+                  } catch (e: any) {
+                    console.error('Failed to update tank auto-stop setting:', e);
+                  }
+                }
+              }}
               sumpLevel={sumpLevel}
               sumpDryRunThreshold={sumpDryRunThreshold}
               turbidity={turbidity}
               turbidityStopThreshold={turbidityStopThreshold}
+              autoStopTurbidity={autoStopTurbidity}
+              onToggleAutoStopTurbidity={async (val) => {
+                setAutoStopTurbidity(val);
+                if (station) {
+                  try {
+                    await api.updateStationSettings(station.id, { auto_stop_on_turbidity: val });
+                    setToastMessage(`✓ Turbidity Clarity Cutoff: ${val ? 'ENABLED' : 'DISABLED'}`);
+                    setTimeout(() => setToastMessage(null), 3000);
+                  } catch (e: any) {
+                    console.error('Failed to update turbidity cutoff setting:', e);
+                  }
+                }
+              }}
               currentAmps={currentAmps}
               voltage={voltage}
               onRefresh={() => loadData(true)}
@@ -1090,22 +1268,70 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                 </div>
               </div>
 
-              {/* 2. HERO BANNER / 2-MOTORS SECTION */}
-              {motorsList.length >= 2 ? (
-                /* 2 MOTORS SELECTION CARD (WHEN STATION HAS MULTIPLE MOTORS) */
+              {/* FAULT TRIP BANNER & 1-CLICK RESET */}
+              {motor?.status === 'FAULT' && (
+                <div className="p-4 rounded-3xl bg-rose-50 border-2 border-rose-300 space-y-3 shadow-sm animate-fade-in">
+                  <div className="flex items-center gap-3">
+                    <span className="p-2.5 rounded-2xl bg-rose-600 text-white flex-shrink-0 animate-pulse">
+                      <AlertTriangle className="w-5 h-5 stroke-[2.5]" />
+                    </span>
+                    <div className="min-w-0">
+                      <h3 className="text-xs font-black text-rose-900 uppercase tracking-wide truncate">
+                        Pump Fault Tripped: {motor.name}
+                      </h3>
+                      <p className="text-[11px] text-rose-700 font-medium">
+                        Safety latch or dry-run protection active. Reset the pump to return it to standby.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleResetMotor(motor.id)}
+                    disabled={isProcessing || !isOperator}
+                    className="w-full py-3 px-4 rounded-2xl bg-rose-600 hover:bg-rose-700 active:scale-95 text-white text-xs font-black flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md shadow-rose-600/25 disabled:opacity-50"
+                  >
+                    <RotateCcw className="w-4 h-4 stroke-[2.5]" />
+                    <span>{isProcessing ? 'RESETTING FAULT...' : 'CLEAR FAULT & RESET PUMP'}</span>
+                  </button>
+                </div>
+              )}
+
+              {/* 2. MOTOR UNITS & CONTROLS SECTION */}
+              {motorsList.length > 0 ? (
+                /* MOTORS SELECTION & STATUS CARD */
                 <div className="p-3.5 rounded-3xl bg-white border border-slate-200 space-y-2.5">
                   <div className="flex items-center justify-between gap-1 text-[11px] font-black tracking-tight text-slate-700 uppercase">
                     <div className="flex items-center gap-1.5 min-w-0">
                       <Sliders className="w-3.5 h-3.5 text-blue-600 flex-shrink-0" />
                       <span className="truncate">{t.selectActiveMotor}</span>
                     </div>
-                    <span className="px-2 py-0.5 rounded-lg bg-blue-50 border border-blue-200/80 text-[10px] font-bold text-blue-700">
-                      {motorsList.length} {t.unitsOnline}
-                    </span>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <span className="px-2 py-0.5 rounded-lg bg-blue-50 border border-blue-200/80 text-[10px] font-bold text-blue-700">
+                        {language === 'hi'
+                          ? `${motorsList.length} मोटर उपलब्ध`
+                          : `${motorsList.length} Unit${motorsList.length !== 1 ? 's' : ''} Configured`}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setActiveServiceScreen('SELECT_MOTOR')}
+                        className="text-[10px] text-blue-600 hover:text-blue-800 font-bold flex items-center gap-0.5 cursor-pointer"
+                      >
+                        <span>{language === 'hi' ? 'विवरण' : 'View All'}</span>
+                        <ChevronRight className="w-3 h-3" />
+                      </button>
+                    </div>
                   </div>
 
-                  {/* 2 Motors Grid */}
-                  <div className="grid grid-cols-2 gap-2">
+                  {/* Motors Grid (Supports 1, 2, or 3+ motors) */}
+                  <div
+                    className={`grid gap-2 ${
+                      motorsList.length === 1
+                        ? 'grid-cols-1'
+                        : motorsList.length === 2
+                        ? 'grid-cols-2'
+                        : 'grid-cols-2 sm:grid-cols-3'
+                    }`}
+                  >
                     {motorsList.map((m) => {
                       const isSelected = motor?.id === m.id;
                       const isRunning = m.status === 'ON' || m.status === 'STARTING';
@@ -1146,7 +1372,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                             </div>
 
                             <span
-                              className={`px-1.5 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider ${
+                              className={`px-1.5 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider flex-shrink-0 ${
                                 isRunning
                                   ? 'bg-emerald-100 text-emerald-700'
                                   : m.status === 'FAULT'
@@ -1159,11 +1385,11 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                           </div>
 
                           <div className="flex items-center justify-between pt-2 mt-1.5 border-t border-slate-100 text-[10px] font-bold">
-                            <span className={isSelected ? 'text-blue-600' : 'text-slate-400'}>
-                              {isSelected ? t.active : t.select}
+                            <span className={isSelected ? 'text-blue-600 font-bold' : 'text-slate-400'}>
+                              {isSelected ? `✓ ${t.active}` : t.select}
                             </span>
                             <span className="font-mono text-slate-500">
-                              {voltage.toFixed(0)}V &bull; {m.rated_power ?? 1.5}kW
+                              {isSelected ? `${voltage.toFixed(0)}V • ` : ''}{m.rated_power ?? 1.5}kW
                             </span>
                           </div>
                         </button>
@@ -1667,13 +1893,32 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
             <div className="space-y-2 pt-2 border-t border-slate-100">
               <label className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-200/60 cursor-pointer">
                 <div>
-                  <div className="text-xs font-bold text-slate-800">Auto-Stop on Tank Full (100% Protection)</div>
-                  <div className="text-[10px] text-slate-400">Enforce authoritative cutoff when tank is full</div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-bold text-slate-800">Auto-Stop on Tank Overflow</span>
+                    <span className="px-1.5 py-0.5 rounded-md text-[9px] font-black bg-teal-100 text-teal-800 border border-teal-200">STANDBY STOP</span>
+                  </div>
+                  <div className="text-[10px] text-slate-400">Safely stop pump into ready standby when tank is full (not fault)</div>
                 </div>
                 <input
                   type="checkbox"
                   checked={autoStopTankFull}
                   onChange={(e) => setAutoStopTankFull(e.target.checked)}
+                  className="w-4 h-4 accent-blue-600 rounded cursor-pointer"
+                />
+              </label>
+
+              <label className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-200/60 cursor-pointer">
+                <div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-bold text-slate-800">Auto-Cutoff on High Turbidity</span>
+                    <span className="px-1.5 py-0.5 rounded-md text-[9px] font-black bg-purple-100 text-purple-800 border border-purple-200">STANDBY STOP</span>
+                  </div>
+                  <div className="text-[10px] text-slate-400">Safely pause pump on murky/dirty water (not a motor fault)</div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={autoStopTurbidity}
+                  onChange={(e) => setAutoStopTurbidity(e.target.checked)}
                   className="w-4 h-4 accent-blue-600 rounded cursor-pointer"
                 />
               </label>
@@ -1842,6 +2087,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
         isMotorRunning={isMotorRunning}
         isProcessing={isProcessing}
         onPowerToggle={handlePowerToggle}
+        motorStatus={motor?.status}
       />
 
       {/* Schedule Manager Modal */}
