@@ -8,6 +8,7 @@ from app.db.session import get_db
 from app.api.deps import get_current_user, require_roles
 from app.models.user import User, UserRole
 from app.models.controller import Controller
+from app.models.station import Station
 from app.models.motor import Motor
 from app.schemas.motor import MotorCreate, MotorUpdate, MotorResponse
 from app.services.motor import (
@@ -69,16 +70,19 @@ async def get_controller_by_id_internal(session: AsyncSession, controller_id: uu
 @router.get("", response_model=List[MotorResponse])
 async def list_motors_endpoint(
     controller_id: Optional[uuid.UUID] = None,
+    station_id: Optional[uuid.UUID] = None,
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db)
 ):
     """
     List motors.
-    SUPER_ADMIN can list all motors or filter by controller_id.
+    SUPER_ADMIN can list all motors or filter by controller_id or station_id.
     Non-SUPER_ADMIN users only receive motors belonging to their authenticated organization.
     """
     if current_user.role == UserRole.SUPER_ADMIN:
-        return await list_motors_for_org_or_controller(session, organization_id=None, controller_id=controller_id)
+        return await list_motors_for_org_or_controller(
+            session, organization_id=None, controller_id=controller_id, station_id=station_id
+        )
 
     if current_user.organization_id is None:
         return []
@@ -88,7 +92,14 @@ async def list_motors_endpoint(
         if controller is None:
             return []
 
-    return await list_motors_for_org_or_controller(session, organization_id=current_user.organization_id, controller_id=controller_id)
+    if station_id is not None:
+        station = await get_org_scoped_resource(session, Station, station_id, current_user.organization_id)
+        if station is None:
+            return []
+
+    return await list_motors_for_org_or_controller(
+        session, organization_id=current_user.organization_id, controller_id=controller_id, station_id=station_id
+    )
 
 
 @router.get("/{motor_id}", response_model=MotorResponse)
