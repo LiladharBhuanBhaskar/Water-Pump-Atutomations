@@ -38,7 +38,7 @@ import {
 
 export const DEFAULT_CLOUDFLARE_URL =
   (((import.meta as any).env?.VITE_API_BASE_URL as string) || '').trim() ||
-  'https://conceptual-opens-path-devices.trycloudflare.com';
+  'https://llp-actress-foundations-dominant.trycloudflare.com';
 
 export function isNativeCapacitorApp(): boolean {
   if (typeof window === 'undefined') return false;
