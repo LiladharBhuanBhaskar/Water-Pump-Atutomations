@@ -3,17 +3,41 @@
 # ==========================================
 
 # ------------------------------------------
-# Environment & Secrets
+# Environment & Secrets (Never commit secrets!)
 # ------------------------------------------
 .env
-.env.local
-.env.*.local
+.env.*
+*.env
+*.env.*
 !.env.example
+!.env.*.example
+!*.env.example
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+
+# Private Keys, Certificates & Credentials
+*.pem
+*.key
+*.pkcs12
+*.p12
+*.pfx
+*.cer
+*.crt
+*.der
+*.keystore
+*.jks
+secrets/
+credentials/
+signing.properties
+release-signing.properties
+google-services.json
 
 # ------------------------------------------
 # Python & Virtual Environments
 # ------------------------------------------
 __pycache__/
+**/__pycache__/
 *.py[cod]
 *$py.class
 *.so
@@ -30,9 +54,11 @@ parts/
 sdist/
 var/
 wheels/
+pip-wheel-metadata/
 *.egg-info/
 .installed.cfg
 *.egg
+MANIFEST
 
 # Virtual Environments
 venv/
@@ -41,14 +67,21 @@ env/
 ENV/
 env.bak/
 venv.bak/
+pythonenv/
 
 # Testing & Type Checking
 .pytest_cache/
+**/.pytest_cache/
 .coverage
 .coverage.*
 htmlcov/
 .mypy_cache/
+**/.mypy_cache/
 .ruff_cache/
+**/.ruff_cache/
+.tox/
+.nox/
+.hypothesis/
 
 # ------------------------------------------
 # SQLite & Runtime Databases
@@ -61,15 +94,23 @@ htmlcov/
 *.sqlite3
 hydracontrol.db
 test_hydracontrol.db
+backend/hydracontrol.db
+backend/test_hydracontrol.db
 
 # ------------------------------------------
 # Node & Frontend (Vite / React)
 # ------------------------------------------
 node_modules/
-frontend/node_modules/
+**/node_modules/
+dist/
+**/dist/
 frontend/dist/
+.vite/
+**/.vite/
 frontend/.vite/
-.npm
+.cache/
+**/.cache/
+.npm/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -79,26 +120,64 @@ lerna-debug.log*
 .pnp.js
 
 # ------------------------------------------
-# Logs, Temp & Scratch Files
-# ------------------------------------------
-*.log
-logs/
-*.tmp
-*.bak
-scratch/
-scratch_*.py
-.tempmediaStorage/
-
-# ------------------------------------------
-# Android & Gradle Build Files
+# Android & Mobile Builds (Capacitor / Gradle)
 # ------------------------------------------
 .gradle/
+**/.gradle/
 **/build/
+local.properties
+**/local.properties
+*.properties.local
+*.apk.idsig
+*.aab
+*.aar
+*.dex
+*.class
+captures/
+.externalNativeBuild/
+**/.externalNativeBuild/
+.cxx/
+**/.cxx/
+*.hprof
+
+# Transient / Generated Android Capacitor Assets
 frontend/android/.gradle/
 frontend/android/build/
 frontend/android/app/build/
-frontend/android/local.properties
-*.apk.idsig
+frontend/android/capacitor-cordova-android-plugins/
+frontend/android/app/src/main/assets/public/
+frontend/android/app/src/main/assets/capacitor.config.json
+frontend/android/app/src/main/assets/capacitor.plugins.json
+frontend/android/app/src/main/res/xml/config.xml
+
+# ------------------------------------------
+# Firmware & Embedded (PlatformIO / Arduino)
+# ------------------------------------------
+.pio/
+**/.pio/
+.pioenvs/
+.piolibdeps/
+.clangd/
+compile_commands.json
+
+# ------------------------------------------
+# Logs, Temp, Scratch & Tunnel Files
+# ------------------------------------------
+*.log
+**/*.log
+logs/
+**/logs/
+*.tmp
+*.bak
+*.swp
+*~
+scratch/
+**/scratch/
+scratch_*.*
+.tempmediaStorage/
+.cloudflared/
+*.tunnel.json
+cert.pem
 
 # ------------------------------------------
 # IDE & Operating System Files
@@ -106,8 +185,13 @@ frontend/android/local.properties
 .vscode/
 !.vscode/settings.json.example
 .idea/
+**/.idea/
+*.iml
+**/*.iml
 *.sublime-project
 *.sublime-workspace
+.fleet/
+.cursor/
 .DS_Store
 .DS_Store?
 ._*
