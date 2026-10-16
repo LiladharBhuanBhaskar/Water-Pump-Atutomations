@@ -1,103 +1,189 @@
-# HydraControl — Commercial IoT Smart Water Motor Control Platform
+# HydraControl — Commercial IoT Smart Water Motor Automation Platform
 
-HydraControl is a robust, commercial-grade IoT platform for remote monitoring, automated protection, and control of water motors/pumps.
+**Developed by Kvon Tech Pvt Ltd**
 
-Designed to serve both simple **Home Users** (one-touch pump control, tank levels, turbidity alerts) and **Enterprise Customers** (multi-tenant hierarchical management: Organization → Site → Station → Controller → Motors/Sensors).
+HydraControl is a mission-critical, enterprise-grade IoT platform engineered for industrial water stations, municipal utilities, commercial facilities, and residential multi-tank water pump automation.
+
+The platform provides end-to-end edge-to-cloud telemetry, authoritative local safety fail-safes, real-time WebSocket telemetry visualization, scheduled motor control, and multi-tenant access control (Enterprise & Home tiers).
 
 ---
 
-## 🏗️ Architecture Overview
+## 🏛️ System Architecture
 
 ```mermaid
 flowchart TD
-    UI[User Web & Mobile UI] <-->|REST API & WebSockets| API[FastAPI Backend Gateway]
-    API <-->|SQLAlchemy ORM| DB[(PostgreSQL Database)]
-    API <-->|Async MQTT Client| MQTT[MQTT Broker / Mosquitto]
-    MQTT <-->|TCP / TLS| ESP[ESP32 / Industrial Controller]
-    ESP -->|Local Safety Logic| RELAY[Relay / Contactor Control]
-    RELAY --> MOTOR[Water Pump / Motor]
-    SENSORS[Turbidity, Flow, Ultrasonic, Float Sensors] -->|Analog/Modbus/GPIO| ESP
+    subgraph ClientLayer [Client & Management Layer]
+        PWA[React 18 + Vite Web App]
+        Android[Capacitor Native Android APK]
+    end
+
+    subgraph CloudLayer [Cloud Core - FastAPI Gateway]
+        API[FastAPI REST & Auth Services]
+        WS[Real-Time WebSocket Streamer & Hub]
+        AutoEngine[Automation & Interlock Rules Engine]
+        DB[(PostgreSQL / SQLite Database)]
+    end
+
+    subgraph BrokerLayer [Messaging Infrastructure]
+        MQTT[EMQX / Mosquitto MQTT Broker]
+    end
+
+    subgraph EdgeLayer [Industrial Edge Controller - ESP32]
+        ESP[ESP32 Microcontroller Firmware]
+        Sensors[Water Level / Turbidity / Flow / Pressure / Current Sensors]
+        Relays[Contactor & Motor Relays]
+        Motor[Submersible / Surface Water Pump]
+    end
+
+    ClientLayer <-->|HTTPS REST & WSS| CloudLayer
+    CloudLayer <-->|Async SQLAlchemy| DB
+    CloudLayer <-->|TLS MQTT Ingestion| BrokerLayer
+    BrokerLayer <-->|MQTTS Telemetry & Commands| ESP
+    Sensors -->|Analog / I2C / Pulse| ESP
+    ESP -->|Authoritative Hardware Cutoff| Relays
+    Relays -->|Power Control| Motor
 ```
 
-### Core Design Principles
-1. **Cloud controls, local controller protects:** Remote commands originate from cloud/UI, but critical safety cutoffs (high turbidity, dry run, overflow) execute locally on the ESP32 even if the internet is disconnected.
-2. **Command state vs. Actual state:** Every command has a traceable `command_id` (`PENDING` → `SENT` → `ACK` → `EXECUTED`). Physical motor status is tracked independently via device telemetry.
-3. **Auditable & Multi-tenant:** Every action is logged with user attribution and site-level authorization.
+### Core Architecture Tenets
+1. **Cloud Decides, Edge Protects:** Remote operational commands originate from the cloud application, but authoritative local hardware safety (dry run prevention, high-turbidity cutoff, tank overflow cutoff, thermal overload) executes immediately on the ESP32 edge microcontroller even if internet connectivity drops.
+2. **Explicit Command State Machine:** Every command transitions deterministically: `PENDING` → `SENT` → `ACK` → `EXECUTED` / `FAILED`, with automatic watchdogs preventing stuck motor commands.
+3. **Multi-Tenant Hierarchical Isolation:** Enforces strict role-based data isolation across **Organization → Site → Station → Controller → Motors / Sensors**.
+4. **Resilient Real-Time Sync:** Telemetry and motor states stream via WebSockets with heartbeat detection and automatic reconnect fallbacks.
 
 ---
 
-## 🚀 Directory Structure
+## 📂 Repository Layout
 
 ```
-hydra-control/
-├── backend/
+water-pump-automation/
+├── backend/                    # FastAPI Backend Gateway
 │   ├── app/
-│   │   ├── api/v1/          # REST API route handlers
-│   │   ├── core/            # Config, security, RBAC
-│   │   ├── db/              # SQLAlchemy session, base models, seeds
-│   │   ├── models/          # Database domain models
-│   │   ├── schemas/         # Pydantic validation schemas
-│   │   ├── services/        # Business logic services
-│   │   ├── mqtt/            # MQTT client, topic router, handlers
-│   │   ├── websocket/       # WebSocket hub & real-time streamer
-│   │   ├── automation/      # Automation rules engine
-│   │   └── main.py          # FastAPI entry point
-│   ├── alembic/             # Database migrations
-│   ├── tests/               # Pytest test suite
-│   └── requirements.txt
-├── frontend/                # React / TypeScript / Vite / Tailwind UI
-├── firmware/                # ESP32 C++/Arduino firmware
-├── device_simulator/        # Python ESP32 IoT hardware simulator
-├── infra/
-│   ├── docker/              # Dockerfiles & compose configs
-│   └── mqtt/                # Mosquitto broker configuration
-├── docs/                    # Architecture, API & hardware documentation
-├── scripts/                 # Utility scripts & test harnesses
-├── docker-compose.yml       # Multi-container orchestration
-├── PROJECT_STATUS.md        # Single source of truth for progress
-├── IMPLEMENTATION_PLAN.md   # Task roadmap & acceptance criteria
-└── DECISIONS.md             # Architectural decision records
+│   │   ├── api/v1/             # REST API routes (Motors, Sensors, Auth, Rules, etc.)
+│   │   ├── core/               # App configuration, security, JWT, rate limiting
+│   │   ├── db/                 # Database engine, session factories, base models
+│   │   ├── models/             # SQLAlchemy ORM relational models
+│   │   ├── schemas/            # Pydantic request/response validation schemas
+│   │   ├── services/           # Business logic & domain services
+│   │   ├── mqtt/               # MQTT client, topic router, message handlers
+│   │   ├── websocket/          # Real-time WebSocket connection hub & streamer
+│   │   ├── automation/         # Automation rules and scheduled operations
+│   │   └── main.py             # Application startup and ASGI entry point
+│   ├── alembic/                # Database migrations
+│   ├── tests/                  # Pytest regression, chaos, load, & E2E suites (500+ tests)
+│   └── requirements.txt        # Python dependencies
+├── frontend/                   # React 18 + TypeScript + Vite + Tailwind Dashboard
+│   ├── android/                # Capacitor Android native project & Gradle build
+│   ├── public/                 # Static assets, logos, and manifests
+│   ├── src/                    # Components, hooks, services, context, i18n
+│   ├── package.json            # Node.js dependencies
+│   └── vite.config.ts          # Vite build configuration
+├── firmware/                   # Industrial ESP32 Controller Firmware (C++ / Arduino)
+│   ├── HydraControl_ESP32/     # Arduino IDE sketch
+│   ├── src/                    # PlatformIO C++ source
+│   ├── include/                # Header files (Safety Engine, MQTT Client, Config)
+│   └── platformio.ini          # PlatformIO board definitions & libraries
+├── device_simulator/           # Complete software simulator for ESP32 edge testing
+├── infra/                      # Docker Compose, Nginx reverse proxy, Mosquitto configs
+├── docs/                       # Engineering manuals, BOM, schematic, FAT checklist
+├── apk/                        # Compiled production Android APK installer
+├── docker-compose.yml          # Local multi-container orchestration
+└── run_backend.bat / run_frontend.bat # Rapid local launcher scripts
 ```
 
 ---
 
-## ⚡ Quickstart
+## 🚀 Quickstart Guide
 
-### Prerequisites
-- Python 3.11+
-- Node.js 18+
-- Docker & Docker Compose (Optional for full containerized stack)
+### 1. Prerequisites
+- **Python:** 3.11 or 3.12
+- **Node.js:** 18 or 20 LTS
+- **Git**
 
-### 1. Backend Setup
+### 2. Backend Setup
 ```bash
+# 1. Navigate to backend directory
 cd backend
+
+# 2. Create and activate virtual environment
 python -m venv venv
-# On Windows:
+# Windows:
 .\venv\Scripts\activate
-# On Linux/macOS:
+# Linux/macOS:
 # source venv/bin/activate
 
+# 3. Install dependencies
 pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
-# Alternatively, from the root project directory:
-# uvicorn app.main:app --reload --port 8000 --app-dir backend
-```
 
-### 2. Run ESP32 Simulator
+# 4. Copy environment template
+cp ../.env.example ../.env
+
+# 5. Start the FastAPI backend server
+uvicorn app.main:app --reload --port 8000
+```
+API Documentation will be live at: `http://localhost:8000/docs`
+
+### 3. Frontend Setup
+```bash
+# 1. Navigate to frontend directory
+cd frontend
+
+# 2. Install dependencies
+npm install
+
+# 3. Copy frontend environment template
+cp .env.example .env
+
+# 4. Start Vite development server
+npm run dev
+```
+Dashboard will be live at: `http://localhost:5173`
+
+### 4. Running the ESP32 Hardware Simulator
+Test the entire end-to-end loop without physical hardware:
 ```bash
 python device_simulator/esp32_simulator.py
 ```
 
-### 3. Frontend Setup
+---
+
+## 📱 Mobile App (Android)
+
+HydraControl includes a full native Android app built using Capacitor.
+
+1. **Prebuilt APK:** Direct installation package available in `apk/HydraControl-Universal-v1.0.apk`.
+2. **Build from source:**
+   ```bash
+   cd frontend
+   npm run build
+   npx cap sync android
+   cd android
+   # Windows:
+   gradlew.bat assembleRelease
+   # Linux/macOS:
+   # ./gradlew assembleRelease
+   ```
+   Built APK will be generated at: `frontend/android/app/build/outputs/apk/release/`.
+
+---
+
+## 🧪 Testing & Verification
+
+HydraControl features a 500+ test regression suite covering unit, integration, RBAC, safety, and chaos resiliency.
+
 ```bash
-cd frontend
-npm install
-npm run dev
+# Run complete test suite
+pytest backend/tests/ -v
+
+# Run safety diagnostics tests
+pytest backend/tests/test_wave2_safety_integration.py -v
+
+# Run Chaos & Resiliency tests
+pytest backend/tests/chaos_tests/test_chaos.py -v
 ```
 
 ---
 
-## 📊 Health Probes
-- `GET /health` — Overall application health
-- `GET /health/db` — PostgreSQL database connectivity
-- `GET /health/mqtt` — MQTT broker connectivity
+## 🛡️ License & Ownership
+
+Copyright © 2026 **Kvon Tech Pvt Ltd**. All rights reserved.  
+Confidential and Proprietary. Unauthorized distribution or reproduction is strictly prohibited.
