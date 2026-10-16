@@ -200,3 +200,11 @@ cert.pem
 ehthumbs.db
 Thumbs.db
 desktop.ini
+
+# ------------------------------------------
+# Internal Planning, Status & Memory Files
+# ------------------------------------------
+IMPLEMENTATION_PLAN.md
+DECISIONS.md
+PROJECT_STATUS.md
+DEPLOYMENT.md
