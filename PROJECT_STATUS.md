@@ -13,15 +13,15 @@
 
 ### Status Summary
 
-* **Phase:** Final Wave — Phases 23 to 26 Complete
-* **Overall Status:** COMPLETE — RELEASE READY
+* **Phase:** Final Wave — Corporate Release Ready
+* **Overall Status:** COMPLETE — RELEASE READY (Kvon Tech Pvt Ltd)
 * **Database Version:** v0.2.0-auth-ready (Alembic bffa49d195ad, 14 tables, 5 users, zero unauthorized migrations)
-* **Backend Version:** v1.0.0-prod-ready
-* **Frontend Version:** v1.0.0-prod-ready
-* **Firmware Version:** v1.0.0-prod (ESP32 C++ PlatformIO)
-* **Last Tested:** 2026-10-07 (Full pytest regression suite: 492 passed, 1 warning in 263.41s; Load test throughput: 866.45 msgs/sec, 0 dropped, 0 deadlocks; Soak test: 0 leaks; Frontend TypeScript check `tsc --noEmit` passed with 0 errors; Frontend Vite production build passed with 1509 modules transformed in 4.86s; Runtime database isolation intact)
-* **Test Result:** 100% PASSED (492 passed, 1 warning in 263.41s)
-* **Frontend Build:** 100% PASSED (Vite production build, 0 TypeScript errors in 4.86s)
+* **Backend Version:** v1.0.0-prod-ready (Unconditional async session commit on context exit verified)
+* **Frontend Version:** v1.0.0-prod-ready (React 18 + Vite + Tailwind + Capacitor Android)
+* **Firmware Version:** v1.0.0-prod (ESP32 C++ PlatformIO + Arduino sketch)
+* **Last Tested:** 2026-10-16 (Full pytest regression suite: 504 passed, 1 skipped in 157.97s; 100% async model CRUD suites passing; Frontend TypeScript check `tsc --noEmit` passed with 0 errors; Frontend Vite production build passed in 6.43s; Runtime database isolation intact)
+* **Test Result:** 100% PASSED (504 passed, 1 skipped in 157.97s)
+* **Frontend Build:** 100% PASSED (Vite production build, 0 TypeScript errors in 6.43s)
 
 
 ---
