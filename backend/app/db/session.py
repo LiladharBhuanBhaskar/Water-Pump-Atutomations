@@ -98,13 +98,12 @@ if is_sqlite:
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """
     FastAPI dependency that provides an isolated async database session per request.
-    Handles automatic commit on success (only if modified) and rollback on exceptions.
+    Handles automatic commit on success and rollback on exceptions.
     """
     async with AsyncSessionLocal() as session:
         try:
             yield session
-            if session.dirty or session.new or session.deleted:
-                await session.commit()
+            await session.commit()
         except Exception:
             await session.rollback()
             raise
@@ -119,8 +118,7 @@ async def get_async_session() -> AsyncGenerator[AsyncSession, None]:
     async with AsyncSessionLocal() as session:
         try:
             yield session
-            if session.dirty or session.new or session.deleted:
-                await session.commit()
+            await session.commit()
         except Exception:
             await session.rollback()
             raise
